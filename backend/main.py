@@ -12,7 +12,8 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, llm, planner, store
+from . import config, db, llm, planner, store
+from .circles_api import router as circles_router
 from .bridges import build_groups
 from .qloo_client import AUDIT, QlooError, get as qget
 from .qloo_service import audience_catalog, resolve_interest, taste_profile
@@ -21,6 +22,8 @@ log = logging.getLogger("culture_connect")
 app = FastAPI(title="Culture Connect", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 _exec = ThreadPoolExecutor(max_workers=4)
+db.migrate()  # apply pending, reversible SQL migrations (backend/migrations) before serving
+app.include_router(circles_router)  # individuals + Circles (/api/me, /api/circles/*, /api/circle-events/*)
 
 
 # ---------------------------------------------------------------- models
@@ -291,9 +294,12 @@ FRONT = config.ROOT / "frontend"
 app.mount("/assets", StaticFiles(directory=FRONT / "assets"), name="assets")
 
 
+NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}  # always serve the latest frontend after an update
+
+
 @app.get("/")
 def index():
-    return FileResponse(FRONT / "index.html")
+    return FileResponse(FRONT / "index.html", headers=NO_CACHE)
 
 
 @app.get("/{name}.{ext}")
@@ -301,4 +307,4 @@ def static_file(name: str, ext: str):
     f = (FRONT / f"{name}.{ext}").resolve()
     if f.parent != FRONT.resolve() or not f.exists():
         raise HTTPException(404)
-    return FileResponse(f)
+    return FileResponse(f, headers=NO_CACHE)

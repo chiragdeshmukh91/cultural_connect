@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS rsvps;
+DROP TABLE IF EXISTS event_votes;
+DROP TABLE IF EXISTS circle_events;
+DROP TABLE IF EXISTS blocks;
+DROP TABLE IF EXISTS reports;
+DROP TABLE IF EXISTS posts;
+DROP TABLE IF EXISTS memberships;
+DROP TABLE IF EXISTS circle_signals;
+DROP INDEX IF EXISTS uq_circle_topic_area;
+DROP TABLE IF EXISTS circles;
+DROP TABLE IF EXISTS user_taste;
+DROP TABLE IF EXISTS interest_signals;
+DROP TABLE IF EXISTS profile_interests;
+DROP TABLE IF EXISTS profiles;
+DROP TABLE IF EXISTS users;

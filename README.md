@@ -23,6 +23,51 @@ Culture Connect helps people who don't know each other form small groups and mee
 
 This score is **not** a validated compatibility score, and Qloo is never claimed to measure interpersonal compatibility.
 
+## Individuals & Circles (self-serve)
+
+Alongside the organizer workflow, **anyone (18+) can join as an individual** and be matched into **Circles**: small, persistent groups built around a shared interest or issue. The interest can be anything from chess, cricket or Minecraft to climate action, diabetes or local politics.
+
+**The journey:** Join → add your interests (type them, drag quick-pick bubbles, or bring a draft from the home-page Qloo playground) → confirm the Qloo matches → choose your privacy and consent settings → get **recommended Circles** with explanations → join, or create a new Circle → discuss → **plan an activity with the agent** → members vote → a host confirms → members RSVP.
+
+| Area | What it does |
+|---|---|
+| Qloo | Interests are resolved with the existing `/search`, `/v2/tags` and `/v2/audiences` calls. The server re-checks every submitted Qloo ID against a resolution it performed itself; IDs it didn't see are dropped. IDs, labels and retrieval timestamps are stored. Taste insights (`/v2/insights`, `filter.type=urn:tag` + recommendations) are cached per user for 24 h. |
+| Matching | Deterministic. **Hard constraints first:** adults only, capacity, blocks, excluded topics, accessibility commitments, meeting mode, area and language. Only then are Circles ranked by declared matches (same Qloo ID or label), Qloo-derived links (a Circle's topic appears in your Qloo taste results), intent and area. Each reason is labelled *Declared*, *Qloo-derived* or *Preference*. There are no percentages. |
+| Circles | Public Circles are discoverable. Private Circles are invite-code plus host approval. Each topic/area pair can have one active public Circle (enforced by a unique index). Health and political Circles get pinned notices. Community guidelines, reporting, blocking, moderators and host transfer are included. |
+| Discussion | Posts and one level of replies, paginated. Edit or delete your own posts; moderators can hide or delete. Duplicate posts and rate limits are checked server-side. |
+| Events | Reuses `planner.run_agent`, fed only Circle-approved data. It produces 2 options, each with a constraint checklist computed in application code, evidence references and open questions. Members vote on options and times. Only a host or moderator can confirm, and confirmation re-validates the hard constraints. RSVPs open after confirmation and are capped at the event's capacity. Nothing is booked or sent automatically. |
+
+**Identity.** The project had no auth. Each individual gets a random 256-bit bearer token (only its SHA-256 hash is stored). The browser keeps the token and the person can export it as a private **recovery key**. This is pseudonymous: there's no email verification. Swap `backend/auth.py` for a real identity provider before running it as a public production service.
+
+**Deletion policy.** `DELETE /api/me` removes the profile, interests, Qloo mappings, taste cache, memberships, votes, RSVPs and blocks. Posts are erased (body removed, author detached) so threads keep a placeholder. Hosted Circles pass to a moderator or the longest-standing member, or are archived if empty. Withdrawing discovery consent deletes the cached Qloo taste profile.
+
+### Database migrations
+SQLite with reversible SQL files in `backend/migrations` (`NNNN_name.up.sql` / `.down.sql`). They are applied automatically at startup.
+```
+python -m backend.db status      # applied versions
+python -m backend.db up          # apply pending
+python -m backend.db down 0002   # roll back 0003 and 0002 (Circles); organizer data untouched
+```
+
+### Circle API (all authorization is enforced server-side; send `Authorization: Bearer <token>`)
+`POST/GET/PUT/DELETE /api/me`, `PUT /api/me/consent`, `GET /api/me/circles|events|blocks`, `POST /api/me/blocks`,
+`GET /api/circles/recommendations`, `GET|POST /api/circles`, `GET|PATCH /api/circles/{id}` (`?invite=` for private), `POST /api/circles/{id}/join|leave`,
+`GET /api/circles/{id}/members`, `POST /api/circles/{id}/members/{user}`, `GET|POST /api/circles/{id}/posts`, `PATCH|DELETE /api/circles/{id}/posts/{pid}`,
+`POST /api/circles/{id}/posts/{pid}/hide`, `GET|POST /api/circles/{id}/reports`, `POST /api/circles/{id}/reports/{rid}/resolve`,
+`GET|POST /api/circles/{id}/events`, `GET /api/circle-events/{eid}`, `POST /api/circle-events/{eid}/vote|confirm|cancel|rsvp`.
+
+### Verify end to end
+1. Home → drag *Jazz* into Qloo → **Add to my draft profile** (no account or Circle is created).
+2. **Join** → add *Chess* (intent *Can teach*), alias, area, 18+, consent → save your recovery key.
+3. **Circles** → there's no match yet → **Create "Chess" Circle** (minimum 2).
+4. In a second browser/incognito window: Join with *chess* (*Want to learn*), same area → the Chess Circle is recommended with a *Declared* reason → **Join**.
+5. Post and reply in **Discussion**. Under **Events**, propose a 90-minute, 20-USD activity with 2 time options → vote.
+6. As the host: confirm option + time → RSVP **Going**. Check **My Circles**.
+7. Create a *Diabetes* Circle → the health topic type is suggested → a pinned "not medical advice" notice appears.
+
+### Tests
+`python -m pytest -q tests`: 22 tests covering the bridge engine, organizer workflow regression, onboarding/consent, Qloo ID verification and failure, playground-creates-nothing, matching (declared vs Qloo, hard constraints), creation dedupe and race, capacity/duplicate membership, private-Circle authorization, discussion CRUD, reporting/blocking, event proposal/vote/confirm/RSVP, constraint enforcement, account deletion and migration rollback. Qloo is faked in tests (no network).
+
 ## Run it locally (Windows)
 
 ```bat
@@ -79,5 +124,7 @@ Host the backend on any Python host, such as Render, Railway, Fly or Azure App S
 - Response normalization handles the documented Qloo shapes. If the hackathon key exposes a different shape for a route, adjust `backend/qloo_service.py`.
 - `/v2/audiences` has no free-text filter, so the app pages each audience parent type once and matches names locally.
 - Cost estimates are format defaults that the organizer should verify.
+- Rate limiting is in-process (per server instance). Self-serve identity is pseudonymous (token-based).
+- Circle discussion is not real-time; refresh or post to see new messages.
 
 License: MIT

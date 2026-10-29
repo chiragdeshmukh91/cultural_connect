@@ -326,14 +326,24 @@
           ${c.length ? c.map((x) => `<div class="pgr-row">${x.image ? `<img src="${escx(x.image)}" alt=""/>` : `<span class="pgr-ph">${x.kind === "tag" ? "#" : x.kind === "audience" ? "◎" : "◆"}</span>`}
             <div><b>${escx(x.name)}</b><small>${escx(prettyT(x.type))}</small></div></div>`).join("")
             : `<p class="pgr-empty">No match — try a broader word.</p>`}
-          <div class="pgr-f">via /search · /v2/tags · /v2/audiences</div>`;
+          <div class="pgr-f">via /search · /v2/tags · /v2/audiences</div>
+          ${window.ccDraftAdd ? `<button class="btn ${window.ccDraftHas && window.ccDraftHas(label) ? "soft" : "primary"} sm pgr-add" type="button" data-label="${escx(label)}" data-emoji="${escx(emoji)}">${window.ccDraftHas && window.ccDraftHas(label) ? "✓ In your draft profile" : "＋ Add to my draft profile"}</button>
+            <p class="pgr-note">Saved only in this browser. Nothing is shared or created until you submit your profile.</p>` : ""}`;
       } catch (err) {
         if (id !== reqId) return;
         out.innerHTML = `<button class="pgr-x" type="button" aria-label="Close">✕</button>
           <div class="pgr-h"><span class="pgr-e">⚠️</span><div><b>Qloo didn't answer</b><small>${escx(err.message).slice(0, 120)}</small></div></div>`;
       }
     }
-    out.addEventListener("click", (e) => { if (e.target.closest(".pgr-x")) out.hidden = true; });
+    out.addEventListener("click", (e) => {
+      if (e.target.closest(".pgr-x")) out.hidden = true;
+      const add = e.target.closest(".pgr-add");
+      if (add && window.ccDraftAdd) {
+        const ok = window.ccDraftAdd(add.dataset.label, add.dataset.emoji);
+        add.textContent = "✓ In your draft profile"; add.classList.remove("primary"); add.classList.add("soft");
+        if (ok && typeof toast === "function") toast(`Added “${add.dataset.label}” to your draft — continue when ready`);
+      }
+    });
 
     function frame() {
       if (!pg.isConnected) { cancelAnimationFrame(raf); ro && ro.disconnect(); return; }

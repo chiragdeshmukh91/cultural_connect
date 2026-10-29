@@ -53,6 +53,9 @@ window.addEventListener("hashchange", route);
 async function route() {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
   window.scrollTo(0, 0);
+  // Individuals & Circles (circles.js) handle their own routes; organization routes below are unchanged.
+  const first = (parts[0] || "").split("?")[0];
+  if (["join", "me", "circles", "my", "c"].includes(first) && window.ccRoute) { parts[0] = first; if (await window.ccRoute(parts)) return; }
   if (parts[0] === "p" && parts[1]) {
     if (!S.program || S.program.id !== parts[1]) {
       try { S.program = await api(`/api/programs/${parts[1]}`); } catch { location.hash = "#/"; return; }
@@ -60,7 +63,8 @@ async function route() {
     return renderStep(parts[2] || "group");
   }
   if (parts[0] === "how") return renderHow();
-  return renderHome();
+  await renderHome();
+  if (window.ccAfterHome) window.ccAfterHome();
 }
 const go = (step) => (location.hash = `#/p/${S.program.id}/${step}`);
 
