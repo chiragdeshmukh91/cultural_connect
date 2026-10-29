@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Culture Connect</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='20' cy='18' r='9' fill='%23f59e0b'/><circle cx='44' cy='18' r='9' fill='%2322c55e'/><path d='M32 58 8 34a14 14 0 0 1 24-12 14 14 0 0 1 24 12z' fill='%236d4aff'/></svg>" />
+</head>
+<body>
+  <div class="bg-mesh" aria-hidden="true"><span></span><span></span><span></span></div>
+  <header class="topbar">
+    <a class="brand" href="#/" aria-label="Culture Connect home">
+      <svg viewBox="0 0 64 64" class="logo" aria-hidden="true">
+        <circle cx="16" cy="16" r="8" fill="#f59e0b"/><circle cx="32" cy="10" r="8" fill="#ef4f9a"/><circle cx="48" cy="16" r="8" fill="#22c55e"/>
+        <path d="M32 60 9 37a13 13 0 0 1 23-13 13 13 0 0 1 23 13z" fill="url(#lg)"/>
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#6d4aff"/></linearGradient></defs>
+      </svg>
+      <span>Culture<br/>Connect</span>
+    </a>
+    <nav class="topnav">
+      <a href="#/">Home</a>
+      <a href="#/how">How it works</a>
+      <button class="linkbtn" id="auditBtn" type="button">Qloo calls</button>
+      <span class="status" id="status" title="Backend status">checking…</span>
+    </nav>
+  </header>
+  <main id="app" aria-live="polite"></main>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head"><h3>Live Qloo request log</h3><button class="iconbtn" id="drawerClose" aria-label="Close">✕</button></div>
+    <p class="muted small">Every Qloo call made by the backend (API key never leaves the server). Use it to verify that each piece of evidence came from a real response.</p>
+    <div id="auditList"></div>
+  </aside>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/app.js"></script>
+  <script src="/fx.js"></script>
+</body>
+</html>

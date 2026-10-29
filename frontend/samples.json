@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Neighbourhood Connect — sample community (synthetic profiles)",
+    "location": "Pune",
+    "constraints": { "duration_min": 90, "budget": 40, "currency": "USD", "setting": "any", "goals": ["connect", "learn"], "flexible_participation": true },
+    "grouping": { "min_size": 2, "max_size": 4, "same_area_only": false },
+    "participants": [
+      { "name": "Asha", "age_band": "65_plus", "location": "Kothrud, Pune", "consent": true,
+        "interests": [ { "label": "chess", "intent": "teach", "category": "" }, { "label": "Lata Mangeshkar", "intent": "share", "category": "urn:entity:artist" } ] },
+      { "name": "Arjun", "age_band": "18_24", "location": "Kothrud, Pune", "consent": true,
+        "interests": [ { "label": "chess", "intent": "learn", "category": "" }, { "label": "The Queen's Gambit", "intent": "share", "category": "urn:entity:tv_show" } ] },
+      { "name": "Meera", "age_band": "45_64", "location": "Baner, Pune", "consent": true,
+        "interests": [ { "label": "climate change", "intent": "share", "category": "" }, { "label": "gardening", "intent": "teach", "category": "" } ] },
+      { "name": "Kabir", "age_band": "25_44", "location": "Baner, Pune", "consent": true,
+        "interests": [ { "label": "climate change", "intent": "share", "category": "" }, { "label": "gardening", "intent": "learn", "category": "" } ] },
+      { "name": "Joseph", "age_band": "65_plus", "location": "Aundh, Pune", "consent": true,
+        "interests": [ { "label": "cricket", "intent": "share", "category": "" }, { "label": "diabetes", "intent": "learn", "category": "" } ] },
+      { "name": "Sara", "age_band": "18_24", "location": "Aundh, Pune", "consent": true,
+        "interests": [ { "label": "cricket", "intent": "share", "category": "" }, { "label": "politics", "intent": "share", "category": "" } ] },
+      { "name": "Ravi", "age_band": "45_64", "location": "Aundh, Pune", "consent": true,
+        "interests": [ { "label": "diabetes", "intent": "teach", "category": "" }, { "label": "politics", "intent": "share", "category": "" } ] }
+    ]
+  }
+]
