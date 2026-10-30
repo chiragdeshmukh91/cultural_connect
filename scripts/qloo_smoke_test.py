@@ -15,7 +15,8 @@ CHECKS = [
     ("Entity search", "/search", {"query": "chess", "take": 3}),
     ("Tag search", "/v2/tags", {"filter.query": "chess", "take": 3}),
     ("Audiences", "/v2/audiences", {"filter.parents.types": "urn:audience:hobbies_and_interests", "take": 3}),
-    ("Insights (artist)", "/v2/insights", {"filter.type": "urn:entity:artist", "take": 2}),
+    ("Insights (artist)", "/v2/insights", {"filter.type": "urn:entity:artist", "take": 2,
+                                           "signal.interests.entities": "B8BEE72B-B321-481F-B81A-A44881D094D6"}),  # entity insights need a signal (as the app always sends)
     ("Insights (taste tags)", "/v2/insights", {"filter.type": "urn:tag", "filter.tag.types": "urn:tag:keyword:media", "take": 3}),
 ]
 

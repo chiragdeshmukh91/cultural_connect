@@ -7,3 +7,8 @@ data/*.db
 _to_delete/
 cc_sync_*.zip
 data/uploads/
+cloudflared
+app.log
+tunnel.log
+public_url.txt
+.venv-wsl/
