@@ -55,6 +55,7 @@ def fake_anchors(members, location, discovery_types=None, take=5):
 @pytest.fixture(autouse=True)
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "t.db")
+    monkeypatch.setattr(config, "UPLOAD_DIR", tmp_path / "uploads")
     db.migrate()
     auth._hits.clear()
     monkeypatch.setattr(circles, "resolve_interest", fake_resolve)

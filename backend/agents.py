@@ -297,7 +297,7 @@ def match_events(c, uid: str, prof: dict, taste: dict | None, saved: list[dict],
                     "address": card["address"], "owner": card["owner"], "going": card["going"], "capacity": e["capacity"],
                     "display_status": card["display_status"], "my_rsvp": mine["status"] if mine else None,
                     "source": "Culture Connect event", "origin": "organisation" if e["owner_kind"] == "org" else "circle",
-                    "reasons": reasons, "score": round(score, 2), "interest_tags": list(dict.fromkeys(tags))[:4], "link": f"#/e/{e['id']}"})
+                    "reasons": reasons, "score": round(score, 2), "interest_tags": list(dict.fromkeys(tags))[:4], "image_url": card.get("image_url", ""), "link": f"#/e/{e['id']}"})
     out.sort(key=lambda x: (-x["score"], x["starts_at"]))
     return out[:30]
 
@@ -487,7 +487,7 @@ def run_discovery(ctx: jobs.Ctx) -> dict:
         slim = [{"type": "circle", "id": r["id"], "name": r["name"], "topic_label": r["topic_label"], "member_count": r["member_count"],
                  "capacity": r["capacity"], "area": r["area"], "meeting_mode": r["meeting_mode"], "category": r["category"],
                  "join_mode": r.get("join_mode", "direct"), "signals": r["signals"][:3], "reasons": r["reasons"], "score": r.get("score", 0),
-                 "org": r.get("org"), "link": f"#/c/{r['id']}"} for r in recs]
+                 "org": r.get("org"), "image_url": r.get("image_url", ""), "link": f"#/c/{r['id']}"} for r in recs]
         return {"result": {"circles": slim, "create": rec["create_suggestions"], "excluded": rec["excluded"]},
                 "message": f"{len(slim)} joinable Circle(s) matched after hard constraints ({sum(rec['excluded'].values())} excluded, "
                            f"{len(rec['recommendations']) - len(slim)} dismissed by you); {q} matched or ranked using Qloo evidence.",

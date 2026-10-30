@@ -4,6 +4,7 @@
 Qloo-powered Circles that turn shared taste into real meetups — built for the Qloo Agentic Hackathon 2026.
 
 - **Live app:** `https://<YOUR-DEPLOYED-URL>` *(placeholder until deployed)*
+- **Full feature & workflow description:** [docs/FEATURE_WALKTHROUGH.md](docs/FEATURE_WALKTHROUGH.md)
 - **Judge guide:** [docs/JUDGE_TESTING_GUIDE.md](docs/JUDGE_TESTING_GUIDE.md)
 - **Submission docs:** [docs/](docs/)
 
@@ -29,6 +30,7 @@ People who share a cultural taste — jazz, poetry, film, street food, chess —
 | Agentic planning and coordination | Circle formation by invitation, activity planning, voting, approval or auto-publish, reminders, follow-up |
 | Invitations and RSVP | Agent invitations (accept / decline), Circle join requests, event RSVP with capacity, attendance |
 | Feedback and personalisation | Save / dismiss recommendations, event feedback that excludes poorly rated formats |
+| Photos | Upload a profile picture, Circle photo, event photo and organisation logo (PNG/JPEG/WebP/GIF, type checked from the file bytes, 3 MB max) |
 | Privacy and user controls | Discovery consent, show-area and share-interests toggles, blocking, account deletion, invitations show counts only |
 
 ## 5. Screenshots
@@ -45,7 +47,7 @@ Browser (vanilla JS SPA)  →  FastAPI backend  →  Qloo Hackathon API
                               ├─ qloo_service.py, qloo_client.py  Qloo calls, cache, retries, audit
                               └─ llm.py (optional), mailer.py (optional), geo.py (optional)
                                        ↓
-                                 SQLite (migrations 0001–0006)
+                                 SQLite (migrations 0001–0007)
 ```
 Details and Mermaid diagrams: [docs/SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md).
 
@@ -96,6 +98,7 @@ Copy `.env.example` to `.env` in the project root and set at least `QLOO_API_KEY
 | `QLOO_BASE_URL` | yes | `https://hackathon.api.qloo.com` |
 | `APP_BASE_URL`, `CORS_ORIGINS` | in production | Public URL (email links) and allowed origins |
 | `DB_PATH` | optional | SQLite file (default `data/culture_connect.db`) |
+| `UPLOAD_DIR`, `UPLOAD_MAX_BYTES` | optional | Uploaded photos (default `uploads/` next to the database; 3 MB max). Keep it on the same persistent disk |
 | `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` | optional | `none` (default, rule-based) / `openai` / `anthropic` / `gemini` |
 | `DISCOVERY_TYPES` | optional | Qloo output categories for insights |
 | `SMTP_*`, `ADMIN_EMAILS`, `GEOCODER`, `NOMINATIM_EMAIL`, `SESSION_DAYS` | optional | Email, organisation verification admins, address search, session length |
@@ -145,7 +148,7 @@ Optional. Leave `LLM_PROVIDER=none` for the transparent rule-based planner, or s
 ```bash
 python -m pytest -q tests
 ```
-48 tests covering accounts, organisations, events and RSVP, Circles, chat, place polls, discovery, agent workflows and the organiser programme. Qloo, email and geocoding are faked, so the suite runs offline.
+50 tests covering accounts, organisations, events and RSVP, Circles, chat, place polls, discovery, agent workflows and the organiser programme. Qloo, email and geocoding are faked, so the suite runs offline.
 
 ## 22. Demo accounts and testing
 Dedicated demo accounts (Sanika — member, Chirag — organiser) are created on a deployment with:

@@ -44,6 +44,8 @@ LLM_MODEL = os.getenv("LLM_MODEL", "").strip()
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").strip()  # OpenAI-compatible endpoints (Groq, Ollama, Azure...)
 
 DB_PATH = Path(os.getenv("DB_PATH", str(ROOT / "data" / "culture_connect.db")))
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(DB_PATH.parent / "uploads")))  # keep on the same persistent disk as the DB
+UPLOAD_MAX_BYTES = int(os.getenv("UPLOAD_MAX_BYTES", str(3 * 1024 * 1024)))
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",") if o.strip()]
 AGENT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "12"))
 

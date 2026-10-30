@@ -429,7 +429,7 @@
           `<button type="button" role="radio" aria-checked="${ck === v}" class="${ck === v ? "on" : ""}" data-ck="${v}">${I(i)}${l}</button>`).join("")}</div>
         <input id="oCv" type="text" maxlength="200" value="${esc(o.contact_value || "")}" placeholder="Shown publicly" ${ck ? "" : "hidden"}/></section>
       <section class="b-step"><header><span class="b-num">4</span><h3>Look</h3><span class="b-ic">${I("palette")}</span></header>
-        <label class="pf-f"><span>${I("palette")}Logo image URL (https, optional)</span><input id="oLogo" type="url" maxlength="400" value="${esc(o.logo_url || "")}" placeholder="https://…/logo.png"/></label>
+        ${window.ccPhoto ? window.ccPhoto.html("oLogo", o.logo_url || "", { label: "Logo (optional)", icon: I("building") }) : ""}
         <p class="pf-hint">${I("sparkle")} No logo? We'll design a banner from your category.</p></section>
       <p class="form-err" id="aErr" role="alert"></p>
       <div class="b-actions"><button class="btn primary" type="submit">${I("check")} ${o.id ? "Save changes" : "Create organisation"}</button></div></div>
@@ -440,7 +440,8 @@
     const f = document.getElementById("orgF");
     if (!f) return;
     const pv = () => { document.getElementById("orgPv").innerHTML = orgCard({ ...o, name: val("oName") || "Your organisation", category: val("oCat"), service_area: val("oArea"),
-      description: document.getElementById("oDesc").value, logo_url: /^https:\/\//.test(val("oLogo")) ? val("oLogo") : "", upcoming_events: null, my_role: o.my_role || (o.id ? null : "owner") }, "#"); };
+      description: document.getElementById("oDesc").value, logo_url: /^(https:\/\/|\/uploads\/)/.test(val("oLogo")) ? val("oLogo") : "", upcoming_events: null, my_role: o.my_role || (o.id ? null : "owner") }, "#"); };
+    if (window.ccPhoto) window.ccPhoto.bind(f, pv);
     f.addEventListener("input", () => { document.getElementById("oDescN").textContent = `${document.getElementById("oDesc").value.length}/2000`; pv(); });
     f.querySelectorAll("[data-cat]").forEach((b) => b.onclick = () => { document.getElementById("oCat").value = b.dataset.cat; f.querySelectorAll("[data-cat]").forEach((x) => x.classList.toggle("on", x === b)); pv(); });
     f.querySelectorAll("[data-ck]").forEach((b) => b.onclick = () => {
@@ -553,6 +554,7 @@
         <div class="field"><label for="fCat">Activity category</label><input id="fCat" type="text" maxlength="60" value="${v("category")}" placeholder="e.g. Volunteering, Chess, Walk"/></div></div>
       <div class="field"><label for="fDesc">Full description</label><textarea id="fDesc" rows="4" maxlength="5000">${v("description")}</textarea></div>
       <div class="field"><label for="fPurpose">Purpose</label><input id="fPurpose" type="text" maxlength="500" value="${v("purpose")}"/></div>
+      ${window.ccPhoto ? window.ccPhoto.html("fImg", e && e.image_url ? e.image_url : "", { label: "Event photo (optional)" }) : ""}
       <div class="grid3"><div class="field"><label for="fStart">Starts *</label><input id="fStart" type="datetime-local" required value="${v("starts_at")}"/></div>
         <div class="field"><label for="fEnd">Ends *</label><input id="fEnd" type="datetime-local" required value="${v("ends_at")}"/></div>
         <div class="field"><label for="fTz">Timezone *</label><input id="fTz" type="text" maxlength="60" value="${v("timezone", myTz())}" list="tzs"/>
@@ -582,6 +584,7 @@
   }
   function bindEventForm(e, save) {
     const f = document.getElementById("evF");
+    if (window.ccPhoto) window.ccPhoto.bind(f);
     let loc = e ? e.location_status : "tbc";
     f.querySelectorAll("[data-loc]").forEach((b) => (b.onclick = () => {
       loc = b.dataset.loc;
@@ -601,7 +604,7 @@
     f.onsubmit = (ev) => {
       ev.preventDefault();
       const num = (id) => { const x = document.getElementById(id).value; return x === "" ? null : Number(x); };
-      const body = { title: val("fTitle"), category: val("fCat"), description: document.getElementById("fDesc").value.trim(), purpose: val("fPurpose"),
+      const body = { image_url: (document.getElementById("fImg") || {}).value || "", title: val("fTitle"), category: val("fCat"), description: document.getElementById("fDesc").value.trim(), purpose: val("fPurpose"),
         starts_at: val("fStart"), ends_at: val("fEnd"), timezone: val("fTz"), location_status: loc, venue_name: val("fVenue"), address: val("fAddr"),
         lat: num("fLat"), lon: num("fLon"), geo_source: num("fLat") === null ? "" : (val("fGeo") || "organiser"), online_url: val("fUrl"),
         capacity: num("fCap"), rsvp_deadline: val("fDl") || null, cost_note: val("fCost"), materials: val("fMat"),
@@ -621,7 +624,7 @@
     const owner = e.owner ? (e.owner.kind === "org" ? `<a href="#/o/${esc(e.owner.slug)}">🏢 ${esc(e.owner.name)}</a> ${verifyBadge(e.owner.verification_status)}` : `<a href="#/c/${esc(e.owner.circle_id)}">⭕ ${esc(e.owner.name)}</a> <span class="muted small">(Circle members only)</span>`) : "";
     const canFeedback = e.status === "completed" && e.my_rsvp === "going" && !e.feedback.mine;
     app.innerHTML = `
-    <section class="event-hero st-${esc(e.display_status)}"><div><div class="row">${statusBadge(e.display_status)}${e.category ? `<span class="chip">${esc(e.category)}</span>` : ""}</div>
+    <section class="event-hero st-${esc(e.display_status)} ${e.image_url ? "has-photo" : ""}"${e.image_url ? ` style="background-image:linear-gradient(120deg,rgba(29,27,58,.86),rgba(29,27,58,.4)),url('${esc(e.image_url)}')"` : ""}><div><div class="row">${statusBadge(e.display_status)}${e.category ? `<span class="chip">${esc(e.category)}</span>` : ""}</div>
       <h1>${esc(e.title)}</h1><div class="eh-meta">🗓 ${when(e)}</div><div class="eh-meta">${owner}</div></div>
       <div class="eh-side"><div class="ch-count"><b>${e.going}</b><span>of ${e.capacity} going</span></div></div></section>
     ${e.status === "cancelled" ? `<div class="notice danger-n">❌ This event was cancelled. Reason: ${esc(e.cancel_reason)}</div>` : ""}

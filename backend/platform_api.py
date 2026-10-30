@@ -96,6 +96,7 @@ class EventIn(BaseModel):
     min_age: Optional[int] = Field(default=None, ge=0, le=120)
     safety: str = Field(default="", max_length=1000)
     reason: str = Field(default="", max_length=300)
+    image_url: str = Field(default="", max_length=400)
 
     @field_validator("rsvp_deadline")
     @classmethod

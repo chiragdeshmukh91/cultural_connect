@@ -1192,3 +1192,20 @@ a.ac-row,.ac-row>summary{display:flex;align-items:center;justify-content:space-b
 [data-theme="sunset"] .ac-row:hover{border-color:var(--pop-ink)}
 .ac-row>summary{color:var(--ink)}
 .pf-del .btn.danger{background:#e11d48;color:#fff;border-color:#e11d48}.pf-del .btn.danger:hover{background:#be123c}
+
+/* ------------------------------------------------------------------ photo uploads */
+.ph-pick{display:flex;align-items:center;gap:14px;padding:10px 12px;margin:0 0 12px;border:1.5px dashed var(--line);border-radius:16px;background:var(--primary-soft)}
+.ph-pick.busy{opacity:.6;pointer-events:none}
+.ph-prev{width:64px;height:64px;flex:none;border-radius:14px;overflow:hidden;display:grid;place-items:center;background:var(--card);color:var(--muted);border:1px solid var(--line)}
+.ph-pick.round .ph-prev{border-radius:50%}
+.ph-prev img{width:100%;height:100%;object-fit:cover;display:block}
+.ph-prev .ic{width:26px;height:26px}
+.ph-act{display:grid;gap:4px;min-width:0}.ph-act b{font-size:.85rem}.ph-act .row{gap:10px;align-items:center}
+.ph-act small{font-size:.72rem;color:var(--muted)}
+.ph-rm{font-size:.78rem;color:#b91c1c}
+.art.photo{background-size:cover;background-position:center}
+.pf-avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
+.av-img{object-fit:cover;padding:0;background:var(--line)}
+.circle-hero.has-photo,.event-hero.has-photo{background-size:cover;background-position:center;color:#fff}
+.circle-hero.has-photo h1,.circle-hero.has-photo p,.event-hero.has-photo h1,.event-hero.has-photo .eh-meta,.event-hero.has-photo .eh-meta a{color:#fff}
+@media (max-width:860px){body.has-profile .botnav a span{font-size:.66rem}}

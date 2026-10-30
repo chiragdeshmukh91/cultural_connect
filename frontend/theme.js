@@ -3,11 +3,11 @@
 (function () {
   "use strict";
   var KEY = "cc_theme";
-  var DEFAULT = "sunset";
+  var DEFAULT = "classic";
   var THEMES = [
+    { id: "classic", name: "Classic", note: "The original lavender look", sw: ["#5b3fd6", "#ef4f9a", "#f1edfd"], meta: "#f1edfd" },
     { id: "sunset", name: "Sunset Pop", note: "Bold, bright, high energy", sw: ["#FF5A1F", "#E11D74", "#FFC93C"], meta: "#FFF4E8" },
-    { id: "editorial", name: "Warm Editorial", note: "Cream, coral and serif", sw: ["#F36D55", "#7467E8", "#F7F3EC"], meta: "#F7F3EC" },
-    { id: "classic", name: "Classic", note: "The original lavender look", sw: ["#5b3fd6", "#ef4f9a", "#f1edfd"], meta: "#f1edfd" }
+    { id: "editorial", name: "Warm Editorial", note: "Cream, coral and serif", sw: ["#F36D55", "#7467E8", "#F7F3EC"], meta: "#F7F3EC" }
   ];
   function find(id) { for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) return THEMES[i]; return null; }
   function saved() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }

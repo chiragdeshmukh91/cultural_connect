@@ -37,7 +37,7 @@
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     bot: '<rect x="3" y="8" width="18" height="12" rx="3"/><path d="M12 8V4M8 14h.01M16 14h.01M9 18h6"/><circle cx="12" cy="3" r="1"/>',
     check: '<path d="M20 6 9 17l-5-5"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>', star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
-    arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14 9l2 2"/>', logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>', idcard: '<rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2.5"/><path d="M14 10h5M14 14h3"/>', chev: '<path d="m9 6 6 6-6 6"/>', ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>', trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>', grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+    arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', home: '<path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14 9l2 2"/>', logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>', idcard: '<rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2.5"/><path d="M14 10h5M14 14h3"/>', chev: '<path d="m9 6 6 6-6 6"/>', ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>', trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>', grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
     lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/>',
   };
   const ic = (k, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[k] || P.sparkle}</svg>`;
@@ -64,8 +64,9 @@
     const hit = THEMES.find(([, re]) => re.test(t));
     return hit ? { key: hit[0], icon: hit[2], g: hit[3], photo: hit[4] } : { key: "default", icon: "sparkle", g: ["#5b3fd6", "#ec4899"], photo: "" };
   }
-  function art(text, extra = "", size = "") {
+  function art(text, extra = "", size = "", photo = "") {
     const th = theme(text);
+    if (photo) return `<div class="art photo ${size}" style="background-image:url('${esc(photo)}')" role="img" aria-label="Photo">${extra}</div>`;
     const bg = th.photo ? `linear-gradient(135deg,${th.g[0]}d9,${th.g[1]}cc),url(${th.photo})` : `linear-gradient(135deg,${th.g[0]},${th.g[1]})`;
     return `<div class="art ${size} t-${th.key}" style="background-image:${bg}" role="img" aria-label="${esc(th.key === "default" ? "Culture Connect" : th.key)} illustration">
       <span class="art-blob b1"></span><span class="art-blob b2"></span>${ic(th.icon, "art-ic")}${extra}</div>`;
@@ -88,7 +89,7 @@
     const act = opts.action !== undefined ? opts.action : c.my_status === "active" ? `<a class="btn soft sm" href="#/c/${esc(c.id)}">Open</a>`
       : c.my_status === "pending" ? `<span class="pill">Request pending</span>`
       : `<button class="btn primary sm" data-join="${esc(c.id)}">${c.join_mode === "request" ? "Request to join" : "Join"}</button>`;
-    return `<article class="cc-tile" data-item="circle:${esc(c.id)}">${art(`${c.topic_label || ""} ${c.name}`, opts.dismiss ? `<button class="tile-x" data-dismiss="circle:${esc(c.id)}" aria-label="Not interested in ${esc(c.name)}">${ic("x")}</button>` : "")}
+    return `<article class="cc-tile" data-item="circle:${esc(c.id)}">${art(`${c.topic_label || ""} ${c.name}`, opts.dismiss ? `<button class="tile-x" data-dismiss="circle:${esc(c.id)}" aria-label="Not interested in ${esc(c.name)}">${ic("x")}</button>` : "", "", c.image_url)}
       <div class="tile-b"><a class="tile-t" href="#/c/${esc(c.id)}">${esc(c.name)}</a>
         <div class="tags">${tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
         ${opts.noReason ? "" : reason(bestReason(c.reasons))}
@@ -98,7 +99,7 @@
     const host = e.owner ? (e.owner.kind === "org" ? `${esc(e.owner.name)}${e.owner.verification_status === "verified" ? ` <span class="vok" title="Verified organisation">${ic("check")}</span>` : ""}` : esc(e.owner.name)) : "";
     const act = e.my_rsvp === "going" ? `<span class="pill ok">${ic("check")} Going</span>` : e.my_rsvp ? `<a class="btn soft sm" href="#/e/${esc(e.id)}">${esc(e.my_rsvp.replace("_", " "))}</a>`
       : `<button class="btn primary sm" data-rsvp="${esc(e.id)}">RSVP</button>`;
-    return `<article class="cc-tile" data-item="event:${esc(e.id)}">${art(`${e.title} ${(e.interest_tags || []).join(" ")} ${e.category || ""}`, dateBadge(e.starts_at) + (opts.dismiss ? `<button class="tile-x" data-dismiss="event:${esc(e.id)}" aria-label="Not interested in ${esc(e.title)}">${ic("x")}</button>` : ""))}
+    return `<article class="cc-tile" data-item="event:${esc(e.id)}">${art(`${e.title} ${(e.interest_tags || []).join(" ")} ${e.category || ""}`, dateBadge(e.starts_at) + (opts.dismiss ? `<button class="tile-x" data-dismiss="event:${esc(e.id)}" aria-label="Not interested in ${esc(e.title)}">${ic("x")}</button>` : ""), "", e.image_url)}
       <div class="tile-b"><a class="tile-t" href="#/e/${esc(e.id)}">${esc(e.title)}</a>
         <div class="meta">${ic("calendar")}${esc(whenTxt(e))}</div>
         <div class="meta">${ic("pin")}${esc(locTxt(e))}</div>
@@ -259,7 +260,7 @@
     const emptyLine = (txt, href, label) => `<div class="empty-line"><span>${esc(txt)}</span>${href ? `<a class="btn soft sm" href="${href}">${label}</a>` : ""}</div>`;
     app.innerHTML = `<div class="fy">
       ${!p.discoverable ? emptyLine("Discovery is off, so we can't recommend anything yet.", "#/me", "Turn it on") : ""}
-      ${feat ? `<section class="fy-feature" aria-label="Featured for you">${art(feat.type === "circle" ? `${feat.topic_label} ${feat.name}` : `${feat.title} ${(feat.interest_tags || []).join(" ")}`, feat.type === "event" ? dateBadge(feat.starts_at) : "", "feat-art")}
+      ${feat ? `<section class="fy-feature" aria-label="Featured for you">${art(feat.type === "circle" ? `${feat.topic_label} ${feat.name}` : `${feat.title} ${(feat.interest_tags || []).join(" ")}`, feat.type === "event" ? dateBadge(feat.starts_at) : "", "feat-art", feat.image_url)}
         <div class="feature-b"><span class="kicker">${ic(feat.type === "circle" ? "users" : "calendar")}${feat.type === "circle" ? "Circle picked for you" : "Event picked for you"}</span>
           <h2>${esc(feat.type === "circle" ? feat.name : feat.title)}</h2>
           <div class="tags">${featTags.map((t) => `<span class="tag w">${esc(t)}</span>`).join("")}${feat.type === "event" ? `<span class="tag w">${esc(whenTxt(feat))}</span>` : `<span class="tag w">${feat.member_count} member${feat.member_count === 1 ? "" : "s"}</span>`}</div>
@@ -416,12 +417,12 @@
     let n = document.getElementById("botNav");
     if (!n) {
       document.body.insertAdjacentHTML("beforeend", `<nav class="botnav" id="botNav" aria-label="Main">
-        <a href="#/dashboard" data-k="d">${ic("compass")}<span>Discover</span></a><a href="#/my" data-k="m">${ic("users")}<span>My Circles</span></a>
+        <a href="#/" data-k="h">${ic("home")}<span>Home</span></a><a href="#/dashboard" data-k="d">${ic("compass")}<span>Discover</span></a><a href="#/my" data-k="m">${ic("users")}<span>My Circles</span></a>
         <a href="#/notifications" data-k="n">${ic("bot")}<span>Updates</span></a><a href="#/me" data-k="p">${ic("user")}<span>Profile</span></a></nav>`);
       n = document.getElementById("botNav");
     }
     const h = location.hash;
-    const k = /^#\/(dashboard|circles|activities|orgs|agent)/.test(h) ? "d" : /^#\/(my|c\/)/.test(h) ? "m" : h.startsWith("#/notifications") ? "n" : h.startsWith("#/me") ? "p" : "";
+    const k = h === "" || h === "#/" ? "h" : /^#\/(dashboard|circles|activities|orgs|agent)/.test(h) ? "d" : /^#\/(my|c\/)/.test(h) ? "m" : h.startsWith("#/notifications") ? "n" : h.startsWith("#/me") ? "p" : "";
     n.querySelectorAll("a").forEach((a) => a.classList.toggle("on", a.dataset.k === k));
   }
 })();

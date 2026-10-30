@@ -6,3 +6,4 @@ data/*.db
 .pytest_cache/
 _to_delete/
 cc_sync_*.zip
+data/uploads/

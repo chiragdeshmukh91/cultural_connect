@@ -46,6 +46,7 @@ class ProfileIn(BaseModel):
     interests: List[InterestIn] = Field(min_length=1, max_length=12)
     adult_confirmed: bool
     discoverable: bool
+    avatar_url: Optional[str] = Field(default=None, max_length=400)  # path from POST /api/uploads; None = unchanged
     timezone: str = Field(default="", max_length=60)  # browser IANA zone, used to schedule agent-drafted activities
 
     @field_validator("adult_confirmed")
@@ -102,6 +103,7 @@ class CircleIn(BaseModel):
     capacity: int = Field(default=12, ge=3, le=50)
     min_size: int = Field(default=3, ge=2, le=10)
     member_events: bool = True
+    image_url: str = Field(default="", max_length=400)
 
     @field_validator("accessibility")
     @classmethod
@@ -118,6 +120,7 @@ class CircleUpdate(BaseModel):
     member_events: Optional[bool] = None
     accessibility: Optional[List[str]] = None
     language: Optional[str] = Field(default=None, max_length=30)
+    image_url: Optional[str] = Field(default=None, max_length=400)
 
 
 class MemberAction(BaseModel):
@@ -258,7 +261,9 @@ def circle(cid: str, invite: Optional[str] = None, uid: Optional[str] = Depends(
 
 @router.patch("/circles/{cid}")
 def edit_circle(cid: str, body: CircleUpdate, uid: str = Depends(current_user)):
-    return svc.update_circle(uid, cid, body.model_dump(exclude_none=True))
+    out = svc.update_circle(uid, cid, body.model_dump(exclude_none=True))
+    agents.on_circle_changed(cid, "a Circle matching your interests was updated")  # cached re-rank, no new Qloo call
+    return out
 
 
 @router.post("/circles/{cid}/join")

@@ -19,6 +19,7 @@ from . import agents, jobs
 from .agents_api import router as agents_router
 from .circles_api import router as circles_router
 from .platform_api import router as platform_router
+from .uploads import router as uploads_router
 from .bridges import build_groups
 from .qloo_client import AUDIT, QlooError, get as qget
 from .qloo_service import audience_catalog, resolve_interest, taste_profile
@@ -30,6 +31,7 @@ _exec = ThreadPoolExecutor(max_workers=4)
 db.migrate()  # apply pending, reversible SQL migrations (backend/migrations) before serving
 app.include_router(circles_router)  # individuals + Circles (/api/me, /api/circles/*, /api/circle-events/*)
 app.include_router(platform_router)  # accounts, organisations, events, places, chat, notifications
+app.include_router(uploads_router)   # photo uploads (/api/uploads, /uploads/<file>)
 app.include_router(agents_router)    # Agent Activity Centre (runs, steps, invites, approvals, settings)
 
 

@@ -312,9 +312,9 @@ def test_organizer_workflow_regression():
 
 def test_migrations_are_reversible(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "m.db")
-    assert db.migrate() == ["0001", "0002", "0003", "0004", "0005", "0006"]
-    assert db.rollback("0002") == ["0006", "0005", "0004", "0003", "0002"]
+    assert db.migrate() == ["0001", "0002", "0003", "0004", "0005", "0006", "0007"]
+    assert db.rollback("0002") == ["0007", "0006", "0005", "0004", "0003", "0002"]
     with db.read() as c:
         assert not c.execute("SELECT name FROM sqlite_master WHERE name = 'circles'").fetchone()
         assert c.execute("SELECT name FROM sqlite_master WHERE name = 'programs'").fetchone()
-    assert db.migrate() == ["0002", "0003", "0004", "0005", "0006"]
+    assert db.migrate() == ["0002", "0003", "0004", "0005", "0006", "0007"]

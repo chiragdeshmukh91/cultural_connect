@@ -46,6 +46,51 @@
     }
     return data;
   }
+
+  // ------------------------------------------------------------------ photo uploads (profile picture, Circle / event photos, organisation logos)
+  const PHOTO_MAX = 3 * 1024 * 1024;
+  async function ccUpload(file) {
+    if (!file) throw new Error("No file chosen.");
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new Error("Choose a PNG, JPEG, WebP or GIF image.");
+    if (file.size > PHOTO_MAX) throw new Error("Photos can be at most 3 MB.");
+    let res;
+    try { res = await fetch("/api/uploads", { method: "POST", headers: { "Content-Type": file.type, Authorization: "Bearer " + CC.token }, body: file }); }
+    catch { throw new Error("You appear to be offline — try again."); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data && data.detail) || "Upload failed.");
+    return data.url;
+  }
+  window.ccUpload = ccUpload;
+  // A small picker: preview + "Upload photo" + "Remove". The chosen path is kept in a hidden input with the given id.
+  window.ccPhoto = {
+    html(id, url, opts = {}) {
+      const ph = opts.icon || (window.wsIcon ? window.wsIcon("camera") : "📷");
+      return `<div class="ph-pick ${opts.round ? "round" : ""}" data-ph="${id}"><span class="ph-prev">${url ? `<img src="${esc(url)}" alt=""/>` : ph}</span>
+        <div class="ph-act"><b>${esc(opts.label || "Photo")}</b><div class="row"><label class="btn soft sm ph-up">${url ? "Change photo" : "Upload photo"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden/></label>
+          <button type="button" class="linkbtn ph-rm" ${url ? "" : "hidden"}>Remove</button></div><small class="ph-msg">PNG, JPEG, WebP or GIF · up to 3 MB</small></div>
+        <input type="hidden" id="${id}" value="${esc(url || "")}"/></div>`;
+    },
+    bind(root, onChange) {
+      root.querySelectorAll("[data-ph]").forEach((box) => {
+        const id = box.dataset.ph, hid = box.querySelector(`#${id}`), prev = box.querySelector(".ph-prev"), msg = box.querySelector(".ph-msg");
+        const rm = box.querySelector(".ph-rm"), lab = box.querySelector(".ph-up"), input = box.querySelector("input[type=file]"), blank = prev.innerHTML;
+        const set = (url) => {
+          hid.value = url; prev.innerHTML = url ? `<img src="${esc(url)}" alt=""/>` : blank; rm.hidden = !url;
+          lab.firstChild.textContent = url ? "Change photo" : "Upload photo";
+          hid.dispatchEvent(new Event("input", { bubbles: true })); if (onChange) onChange(id, url);
+        };
+        input.onchange = async () => {
+          const f = input.files && input.files[0]; input.value = "";
+          if (!f) return;
+          msg.textContent = "Uploading…"; box.classList.add("busy");
+          try { set(await ccUpload(f)); msg.textContent = "Uploaded ✓ — save to keep it"; }
+          catch (e) { msg.textContent = e.message; toast(e.message, true); }
+          finally { box.classList.remove("busy"); }
+        };
+        rm.onclick = () => { set(""); msg.textContent = "Removed — save to apply"; };
+      });
+    },
+  };
   async function loadMe(force = false) {
     if (!CC.token) { CC.me = null; CC.auth = null; CC.meLoaded = true; navState(); return null; }
     if (CC.meLoaded && !force) return CC.me;
@@ -105,7 +150,7 @@
     nav.querySelector('[data-cc="prof"]').hidden = !CC.me;
     nav.querySelector('[data-cc="orgr"]').hidden = !(CC.auth && CC.auth.orgs && CC.auth.orgs.length);
     nav.querySelector('[data-cc="bell"]').hidden = !signed;
-    nav.querySelectorAll('a[href="#/"], a[href="#/how"]').forEach((a) => (a.hidden = !!CC.me));
+    nav.querySelectorAll('a[href="#/how"]').forEach((a) => (a.hidden = !!CC.me));  // Home stays visible: the first page is always one click away
     const j = nav.querySelector('[data-cc="join"]');
     j.textContent = signed ? (CC.me ? CC.me.alias : "Finish setup") : "Sign in";
     j.setAttribute("href", signed ? (CC.me ? "#/me" : "#/start") : "#/auth/signin");
@@ -185,7 +230,7 @@
     app.innerHTML = `
     <section class="pf-hero" style="--g1:${heroTheme.g[0]};--g2:${heroTheme.g[1]}">
       <span class="pf-blob b1"></span><span class="pf-blob b2"></span>
-      <div class="pf-avatar"><span>${esc((p.alias || "You").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase())}</span><i>${I(heroTheme.icon)}</i></div>
+      <div class="pf-avatar" id="pfAv">${p.avatar_url ? `<img src="${esc(p.avatar_url)}" alt="Your profile picture"/>` : `<span>${esc((p.alias || "You").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase())}</span>`}<i>${I(heroTheme.icon)}</i></div>
       <div class="pf-id"><span class="pf-kick">${mode === "join" ? "Let's get you matched" : "Your profile"}</span>
         <h1>${mode === "join" ? "Find your people" : esc(p.alias)}</h1>
         <div class="pf-meta">${p.area ? `<span>${I("pin")}${esc(p.area)}</span>` : ""}<span>${I("sparkle")}${(p.interests || []).length} interests</span>
@@ -202,6 +247,7 @@
         <p class="pf-hint">${I("compass")} Qloo links each interest to cultural signals. Health or political topics are optional.</p>
       </section></div><div class="pf-col">
       <section class="pf-card"><header>${I("user")}<h2>About you</h2></header>
+        ${window.ccPhoto ? window.ccPhoto.html("fAvatar", p.avatar_url || "", { label: "Profile picture", round: true, icon: I("user") }) : ""}
         <div class="pf-fields">
           <label class="pf-f"><span>${I("user")}Name or alias *</span><input id="fAlias" type="text" required minlength="2" maxlength="40" value="${esc(p.alias || "")}" autocomplete="nickname"/></label>
           <label class="pf-f"><span>${I("pin")}Area</span><input id="fArea" type="text" maxlength="60" value="${esc(p.area || "")}" placeholder="City or neighbourhood"/></label>
@@ -230,6 +276,11 @@
         <span class="row">${mode === "join" ? "" : `<button class="btn ghost" type="button" id="pfDiscard">Discard</button>`}<button class="btn primary" type="submit" id="pfSubmit">${mode === "join" ? "Finish & see my recommendations →" : "Save changes"}</button></span></div>
     </form>`;
     const root = document.getElementById("pf");
+    if (window.ccPhoto) window.ccPhoto.bind(root, (id, url) => {
+      const av = document.getElementById("pfAv"); if (!av) return;
+      const icon = av.querySelector("i") ? av.querySelector("i").outerHTML : "";
+      av.innerHTML = (url ? `<img src="${esc(url)}" alt="Your profile picture"/>` : `<span>${esc((document.getElementById("fAlias").value || "You").slice(0, 2).toUpperCase())}</span>`) + icon;
+    });
     root.querySelectorAll("[data-multi]").forEach((b) => (b.onclick = () => { b.classList.toggle("on"); b.setAttribute("aria-pressed", b.classList.contains("on")); }));
 
     const list = document.getElementById("intList");
@@ -311,6 +362,7 @@
           adult_confirmed: true, discoverable: document.getElementById("fDisc").checked,
           show_area: document.getElementById("fShowArea").checked, share_interests: document.getElementById("fShare").checked,
           interests: st.ints.map((t) => ({ label: t.label, intent: t.intent, signals: (t.signals || []).map((s) => ({ id: s.id, kind: s.kind })) })),
+          avatar_url: document.getElementById("fAvatar") ? document.getElementById("fAvatar").value : undefined,
           timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } })(),
         };
         const res = await capi("/api/me", { method: mode === "join" ? "POST" : "PUT", body });
@@ -447,6 +499,7 @@
       <section class="b-step"><header><span class="b-num">1</span><h3>Basics</h3><span class="b-ic">${I("users")}</span></header>
         <label class="pf-f"><span>${I("users")}Circle name *</span><input id="cName" type="text" minlength="3" maxlength="80" required value="${esc(s.label)} Circle"/></label>
         <label class="pf-f"><span>${I("book")}Purpose</span><textarea id="cPurpose" maxlength="400" rows="2" placeholder="What will members do together?"></textarea></label>
+        ${window.ccPhoto ? window.ccPhoto.html("cImg", "", { label: "Circle photo (optional)" }) : ""}
         <span class="pf-f"><span>${I("sparkle")}Topic type</span></span>
         ${seg("Topic type", "cCat", [["general", "General", "sparkle", "Hobbies & culture"], ["health", "Peer support", "heart", "Health & wellbeing"], ["political", "Civic", "mic", "Politics & dialogue"]], s.suggested_category || "general")}</section>
       <section class="b-step"><header><span class="b-num">2</span><h3>Where & who</h3><span class="b-ic">${I("pin")}</span></header>
@@ -473,12 +526,13 @@
       const cap = +document.getElementById("cCap").value, min = +document.getElementById("cMin").value;
       document.getElementById("cCapO").textContent = cap; document.getElementById("cMinO").textContent = min;
       const mode = document.getElementById("cMode").value;
-      document.getElementById("cPv").innerHTML = window.wsCircleTile ? window.wsCircleTile({ id: "preview", name: document.getElementById("cName").value || `${s.label} Circle`,
+      document.getElementById("cPv").innerHTML = window.wsCircleTile ? window.wsCircleTile({ id: "preview", image_url: (document.getElementById("cImg") || {}).value || "", name: document.getElementById("cName").value || `${s.label} Circle`,
         topic_label: s.label, signals: s.signals || [], member_count: 1, area: mode === "online" ? "" : document.getElementById("cArea").value, meeting_mode: mode,
         reasons: [{ source: "app", text: document.getElementById("cPurpose").value || `People who share an interest in ${s.label}.` }] },
         { action: `<span class="pill">${document.getElementById("cVis").value === "private" ? `${I("lock")} Private` : `${I("compass")} Public`} · up to ${cap}</span>` }) : "";
     };
     slot.addEventListener("input", pv);
+    if (window.ccPhoto) window.ccPhoto.bind(slot, pv);
     pv();
     slot.scrollIntoView({ behavior: "smooth", block: "start" });
     document.getElementById("cCancel").onclick = () => (slot.innerHTML = "");
@@ -489,7 +543,7 @@
           category: document.getElementById("cCat").value, meeting_mode: document.getElementById("cMode").value, area: document.getElementById("cArea").value.trim(),
           visibility: document.getElementById("cVis").value, capacity: +document.getElementById("cCap").value, min_size: +document.getElementById("cMin").value,
           language: document.getElementById("cLang").value.trim(), intents: readMulti(slot, "cint"), accessibility: readMulti(slot, "cacc"),
-          member_events: document.getElementById("cMemEv").checked };
+          member_events: document.getElementById("cMemEv").checked, image_url: (document.getElementById("cImg") || {}).value || "" };
         if (body.min_size > body.capacity) return toast("Minimum can't be larger than capacity", true);
         try {
           const c = await capi("/api/circles", { body });
@@ -524,7 +578,7 @@
     const m = c.my_membership, member = m && m.status === "active", mod = member && ["host", "moderator"].includes(m.role);
     const tabs = [["chat", "💬 Chat"], ["discussion", "🧵 Threads"], ["events", "📅 Activities"], ["members", "👥 Members"], ["about", "ℹ️ About"]];
     app.innerHTML = `
-    <section class="circle-hero cat-${c.category}">
+    <section class="circle-hero cat-${c.category} ${c.image_url ? "has-photo" : ""}"${c.image_url ? ` style="background-image:linear-gradient(120deg,rgba(29,27,58,.86),rgba(29,27,58,.45)),url('${esc(c.image_url)}')"` : ""}>
       <div><span class="how-kicker">${c.category === "health" ? "🩺 Peer support" : c.category === "political" ? "🗳 Civic dialogue" : "⭕ Circle"}${c.visibility === "private" ? " · 🔒 Private" : ""}</span>
         ${c.org ? `<a class="org-pill" href="#/o/${esc(c.org.slug)}">🏢 ${esc(c.org.name)} · ${c.org.verification_status === "verified" ? "✓ Verified" : c.org.verification_status === "pending" ? "Verification pending" : "Not verified"}</a>` : ""}
         <h1>${esc(c.name)}</h1><p>${esc(c.purpose || `People who share an interest in ${c.topic_label}.`)}</p>
@@ -564,6 +618,7 @@
     return `<form class="card" id="hs"><h3>⚙️ Host settings</h3>
       <div class="field"><label for="hName">Name</label><input id="hName" type="text" minlength="3" maxlength="80" value="${esc(c.name)}"/></div>
       <div class="field"><label for="hPurpose">Purpose</label><textarea id="hPurpose" maxlength="400" rows="2">${esc(c.purpose)}</textarea></div>
+      ${window.ccPhoto ? window.ccPhoto.html("hImg", c.image_url || "", { label: "Circle photo" }) : ""}
       <div class="grid3"><div class="field"><label for="hCap">Capacity</label><input id="hCap" type="number" min="3" max="50" value="${c.capacity}"/></div>
         <div class="field"><label for="hMin">Minimum</label><input id="hMin" type="number" min="2" max="10" value="${c.min_size}"/></div>
         <div class="field"><label for="hCat">Topic type</label><select id="hCat">${["general", "health", "political"].map((v) => `<option ${c.category === v ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
@@ -574,10 +629,12 @@
   function bindHost(c) {
     const f = document.getElementById("hs"); if (!f) return;
     f.querySelectorAll("[data-multi]").forEach((b) => (b.onclick = () => b.classList.toggle("on")));
+    if (window.ccPhoto) window.ccPhoto.bind(f);
     f.onsubmit = (e) => { e.preventDefault(); withBusy(e.submitter, async () => {
       await capi(`/api/circles/${c.id}`, { method: "PATCH", body: { name: document.getElementById("hName").value.trim(), purpose: document.getElementById("hPurpose").value.trim(),
         capacity: +document.getElementById("hCap").value, min_size: +document.getElementById("hMin").value, category: document.getElementById("hCat").value,
-        accessibility: readMulti(f, "hacc"), member_events: document.getElementById("hMemEv").checked } });
+        accessibility: readMulti(f, "hacc"), member_events: document.getElementById("hMemEv").checked,
+        image_url: (document.getElementById("hImg") || {}).value || "" } });
       toast("Settings saved"); viewCircle(c.id, "about"); }); };
   }
   async function loadReports(c) {
@@ -652,7 +709,7 @@
     const r = await capi(`/api/circles/${c.id}/members`);
     body.innerHTML = `<div class="card"><h3>👥 ${r.members.filter((x) => x.status === "active").length} members</h3>
       <p class="muted small">Members only see aliases plus what each person chose to share.</p>
-      ${r.members.map((x, i) => `<div class="person"><div class="avatar" style="background:${color(i)}">${esc(initials(x.alias))}</div><div style="flex:1;min-width:0">
+      ${r.members.map((x, i) => `<div class="person">${x.avatar_url ? `<img class="avatar av-img" src="${esc(x.avatar_url)}" alt=""/>` : `<div class="avatar" style="background:${color(i)}">${esc(initials(x.alias))}</div>`}<div style="flex:1;min-width:0">
         <div class="row between"><h4>${esc(x.alias)} ${x.me ? '<span class="muted small">(you)</span>' : ""}</h4><span class="badge ${x.status === "pending" ? "participant" : x.role === "member" ? "generated" : "qloo"}">${x.status === "pending" ? "pending" : x.role}</span></div>
         <div class="meta">${x.area ? "📍 " + esc(x.area) + " · " : ""}joined ${fmtTime(x.joined_at)}</div>
         ${x.bio ? `<p class="small">${esc(x.bio)}</p>` : ""}

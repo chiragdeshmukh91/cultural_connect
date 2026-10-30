@@ -168,6 +168,9 @@ def save_profile(uid: str | None, data: dict) -> dict:
                    data.get("budget_max"), jl(data.get("availability")), jl(data.get("activity_prefs")),
                    jl(data.get("accessibility")), jl(data.get("exclude_topics")), 1, int(data["discoverable"]),
                    consent_at, ts, (data.get("timezone") or "")[:60]))
+        if data.get("avatar_url") is not None:
+            from .uploads import media_url
+            c.execute("UPDATE profiles SET avatar_url = ? WHERE user_id = ?", (media_url(data["avatar_url"]), uid))
         c.execute("DELETE FROM profile_interests WHERE user_id = ?", (uid,))
         for it in interests:
             cur = c.execute("INSERT INTO profile_interests (user_id, label, intent) VALUES (?,?,?)",
@@ -213,6 +216,7 @@ def delete_account(uid: str) -> dict:
     Posts are erased (body removed, author detached) so replies keep their thread. Hosted Circles pass to the
     longest-standing moderator/member, or are archived if empty."""
     with db.tx() as c:
+        av = c.execute("SELECT avatar_url FROM profiles WHERE user_id = ?", (uid,)).fetchone()
         hosted = [r["circle_id"] for r in c.execute(
             "SELECT circle_id FROM memberships WHERE user_id = ? AND role = 'host' AND status = 'active'", (uid,))]
         for cid in hosted:
@@ -233,6 +237,9 @@ def delete_account(uid: str) -> dict:
                     users = [r[0] for r in c.execute("SELECT user_id FROM event_rsvps WHERE event_id = ? AND user_id <> ?", (e["id"], uid))]
                     notify(c, users, "event_cancelled", f"Cancelled: {e['title']}", "Organiser account closed", f"#/e/{e['id']}")
         c.execute("DELETE FROM users WHERE id = ?", (uid,))
+    if av and av["avatar_url"].startswith("/uploads/"):  # the profile picture file goes with the account
+        from . import config
+        (config.UPLOAD_DIR / av["avatar_url"].rsplit("/", 1)[1]).unlink(missing_ok=True)
     return {"deleted": True, "circles_transferred_or_archived": len(hosted)}
 
 
@@ -505,6 +512,9 @@ def create_circle(uid: str, data: dict) -> dict:
         for s in sig:
             c.execute("INSERT INTO circle_signals VALUES (?,?,?,?,?)", (cid, s["qloo_id"], s["kind"], s["name"], s["type"]))
         c.execute("INSERT INTO memberships VALUES (?,?,?,?,?)", (cid, uid, "host", "active", now()))
+        if data.get("image_url"):
+            from .uploads import media_url
+            c.execute("UPDATE circles SET image_url = ? WHERE id = ?", (media_url(data["image_url"]), cid))
         if data["visibility"] == "private":
             c.execute("UPDATE circles SET invite_code = ? WHERE id = ?", (secrets.token_urlsafe(9), cid))
     return circle_detail(cid, uid)
@@ -525,6 +535,9 @@ def update_circle(uid: str, cid: str, data: dict) -> dict:
                    cap, data.get("min_size", row["min_size"]), int(data.get("member_events", row["member_events"])),
                    jl(data["accessibility"]) if "accessibility" in data else row["accessibility"],
                    data.get("language", row["language"]), cid))
+        if "image_url" in data:
+            from .uploads import media_url
+            c.execute("UPDATE circles SET image_url = ? WHERE id = ?", (media_url(data["image_url"]), cid))
     return circle_detail(cid, uid)
 
 
@@ -620,7 +633,7 @@ def members(uid: str, cid: str) -> dict:
         row, m = _circle_or_404(c, cid, uid)
         if not _active(m):
             raise HTTPException(403, "Join this Circle to see its members.")
-        rows = c.execute("""SELECT m.user_id, m.role, m.status, m.joined_at, p.alias, p.area, p.show_area, p.share_interests, p.bio
+        rows = c.execute("""SELECT m.user_id, m.role, m.status, m.joined_at, p.alias, p.area, p.show_area, p.share_interests, p.bio, p.avatar_url
                             FROM memberships m LEFT JOIN profiles p ON p.user_id = m.user_id
                             WHERE m.circle_id = ? AND m.status IN ('active','pending') ORDER BY m.joined_at""", (cid,)).fetchall()
         out = []
@@ -628,7 +641,8 @@ def members(uid: str, cid: str) -> dict:
             if r["status"] == "pending" and not _is_mod(m):
                 continue
             d = {"user_id": r["user_id"], "alias": r["alias"] or "Organisation staff", "role": r["role"], "status": r["status"],
-                 "joined_at": r["joined_at"], "me": r["user_id"] == uid, "bio": r["bio"] if r["share_interests"] else ""}
+                 "joined_at": r["joined_at"], "me": r["user_id"] == uid, "bio": r["bio"] if r["share_interests"] else "",
+                 "avatar_url": r["avatar_url"] or ""}
             if r["show_area"]:
                 d["area"] = r["area"]
             if r["share_interests"]:

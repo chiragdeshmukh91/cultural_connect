@@ -22,7 +22,7 @@ from .circles import _circle_or_404, _is_mod, _active, norm
 
 EVENT_FIELDS = ("title", "description", "purpose", "category", "starts_at", "ends_at", "timezone", "location_status",
                 "venue_name", "address", "lat", "lon", "geo_source", "online_url", "capacity", "rsvp_deadline",
-                "cost_note", "materials", "accessibility", "requirements", "min_age", "safety")
+                "cost_note", "materials", "accessibility", "requirements", "min_age", "safety", "image_url")
 MATERIAL = ("starts_at", "ends_at", "timezone", "location_status", "venue_name", "address", "lat", "lon", "online_url", "status")
 
 
@@ -115,13 +115,18 @@ def _safe_url(u: str) -> str:
     return u
 
 
+def _media(u: str) -> str:
+    from .uploads import media_url
+    return media_url(u, allow_https=True)
+
+
 def create_org(uid: str, data: dict) -> dict:
     kind, value = _contact(data.get("contact_kind", ""), data.get("contact_value", ""))
     with db.tx() as c:
         oid = "O" + uuid.uuid4().hex[:10]
         c.execute("""INSERT INTO organisations (id, slug, name, description, logo_url, category, service_area, contact_kind,
                      contact_value, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (oid, _slug(c, data["name"]), data["name"].strip(), data.get("description", ""), _safe_url(data.get("logo_url", "")),
+                  (oid, _slug(c, data["name"]), data["name"].strip(), data.get("description", ""), _media(data.get("logo_url", "")),
                    data.get("category", ""), data.get("service_area", ""), kind, value, uid, now(), now()))
         c.execute("INSERT INTO org_members VALUES (?,?,?,?)", (oid, uid, "owner", now()))
     return org_detail(oid, uid)
@@ -135,7 +140,7 @@ def update_org(uid: str, oid: str, data: dict) -> dict:
         c.execute("""UPDATE organisations SET name = ?, description = ?, logo_url = ?, category = ?, service_area = ?,
                      contact_kind = ?, contact_value = ?, updated_at = ? WHERE id = ?""",
                   (data.get("name", row["name"]), data.get("description", row["description"]),
-                   _safe_url(data.get("logo_url", row["logo_url"])), data.get("category", row["category"]),
+                   _media(data.get("logo_url", row["logo_url"])), data.get("category", row["category"]),
                    data.get("service_area", row["service_area"]), kind, value, now(), row["id"]))
     return org_detail(row["id"], uid)
 
@@ -409,6 +414,8 @@ def _is_past(e) -> bool:
 
 def _validate_event(d: dict, existing=None) -> dict:
     v = {k: d.get(k, existing[k] if existing else None) for k in EVENT_FIELDS}
+    from .uploads import media_url
+    v["image_url"] = media_url(v["image_url"])
     if not v["title"] or not (3 <= len(v["title"].strip()) <= 120):
         raise HTTPException(422, "Title must be 3–120 characters.")
     tz = _tz(v["timezone"] or "")
@@ -654,7 +661,7 @@ def _event_card(c, e) -> dict:
     return {"id": e["id"], "title": e["title"], "category": e["category"], "starts_at": e["starts_at"], "ends_at": e["ends_at"],
             "timezone": e["timezone"], "status": status, "display_status": display, "location_status": e["location_status"],
             "venue_name": e["venue_name"], "address": e["address"] if e["location_status"] == "confirmed" else "",
-            "capacity": e["capacity"], "going": going, "owner": owner, "visibility": e["visibility"]}
+            "capacity": e["capacity"], "going": going, "owner": owner, "visibility": e["visibility"], "image_url": e["image_url"]}
 
 
 def get_event(eid: str, uid: str | None) -> dict:
