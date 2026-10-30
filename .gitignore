@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 data/*.db
 .pytest_cache/
+_to_delete/
+cc_sync_*.zip

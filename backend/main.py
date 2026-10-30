@@ -6,14 +6,19 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import config, db, llm, planner, store
+from . import platform_svc
+from .auth import optional_user
+from . import agents, jobs
+from .agents_api import router as agents_router
 from .circles_api import router as circles_router
+from .platform_api import router as platform_router
 from .bridges import build_groups
 from .qloo_client import AUDIT, QlooError, get as qget
 from .qloo_service import audience_catalog, resolve_interest, taste_profile
@@ -24,6 +29,36 @@ app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_meth
 _exec = ThreadPoolExecutor(max_workers=4)
 db.migrate()  # apply pending, reversible SQL migrations (backend/migrations) before serving
 app.include_router(circles_router)  # individuals + Circles (/api/me, /api/circles/*, /api/circle-events/*)
+app.include_router(platform_router)  # accounts, organisations, events, places, chat, notifications
+app.include_router(agents_router)    # Agent Activity Centre (runs, steps, invites, approvals, settings)
+
+
+@app.on_event("startup")
+def _start_agent_worker():
+    # Persistent background worker: runs queued agent jobs and the coordination sweep; resumes interrupted runs.
+    if config.AGENT_WORKER:
+        jobs.start_worker(tick=agents.sweep, tick_every=config.AGENT_SWEEP_SECONDS)
+
+
+@app.on_event("shutdown")
+def _stop_agent_worker():
+    jobs.stop_worker()
+
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; "
+       "frame-src https://www.openstreetmap.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers.setdefault("Content-Security-Policy", CSP)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    if request.url.path.startswith("/api/"):
+        resp.headers.setdefault("Cache-Control", "no-store")
+    return resp
 
 
 # ---------------------------------------------------------------- models
@@ -48,9 +83,10 @@ class ApproveIn(ProgramRef):
     concept_id: str
 
 
-def _program(pid: str) -> dict:
+def _program(pid: str, uid: Optional[str] = None) -> dict:
     p = store.get(pid)
-    if not p:
+    # Organisation programmes are visible only to that organisation's team (404 avoids leaking existence).
+    if not p or not platform_svc.can_access_program(p, uid):
         raise HTTPException(404, "Program not found")
     return p
 
@@ -104,25 +140,31 @@ def warm_audiences():
 
 # ---------------------------------------------------------------- programs
 @app.get("/api/programs")
-def programs():
-    return store.list_programs()
+def programs(uid: Optional[str] = Depends(optional_user)):
+    return [p for p in store.list_programs() if platform_svc.can_access_program(store.get(p["id"]) or {}, uid)]
 
 
 @app.post("/api/programs")
 def create_program(doc: dict):
     doc.pop("id", None)
+    doc.pop("org_id", None)  # organisation programmes are created via /api/orgs/{id}/programs (team only)
     return store.save(doc)
 
 
 @app.get("/api/programs/{pid}")
-def read_program(pid: str):
-    return _program(pid)
+def read_program(pid: str, uid: Optional[str] = Depends(optional_user)):
+    return _program(pid, uid)
 
 
 @app.put("/api/programs/{pid}")
-def update_program(pid: str, doc: dict):
-    old = _program(pid)
+def update_program(pid: str, doc: dict, uid: Optional[str] = Depends(optional_user)):
+    old = _program(pid, uid)
     doc["id"] = pid
+    for k in ("org_id", "circles"):  # never let a client move a programme between organisations
+        if k in old:
+            doc[k] = old[k]
+        else:
+            doc.pop(k, None)
     for k in ("bridges", "plans"):  # server-computed fields survive client saves unless explicitly sent
         if k not in doc and k in old:
             doc[k] = old[k]
@@ -130,7 +172,8 @@ def update_program(pid: str, doc: dict):
 
 
 @app.delete("/api/programs/{pid}")
-def delete_program(pid: str):
+def delete_program(pid: str, uid: Optional[str] = Depends(optional_user)):
+    _program(pid, uid)
     store.delete(pid)
     return {"ok": True}
 
@@ -142,8 +185,8 @@ def resolve(body: ResolveIn):
 
 
 @app.post("/api/discovery/run")
-def discovery(ref: ProgramRef):
-    p = _program(ref.program_id)
+def discovery(ref: ProgramRef, uid: Optional[str] = Depends(optional_user)):
+    p = _program(ref.program_id, uid)
     people = [x for x in p.get("participants", []) if x.get("consent", True)]
 
     def run(person):
@@ -162,8 +205,8 @@ def discovery(ref: ProgramRef):
 
 
 @app.post("/api/bridges/build")
-def bridges(ref: ProgramRef):
-    p = _program(ref.program_id)
+def bridges(ref: ProgramRef, uid: Optional[str] = Depends(optional_user)):
+    p = _program(ref.program_id, uid)
     g = p.get("grouping") or {}
     p["bridges"] = build_groups(p.get("participants", []), int(g.get("min_size", 2)), int(g.get("max_size", 6)),
                                 bool(g.get("same_area_only", False)))
@@ -179,8 +222,8 @@ def _group(p, gid):
 
 
 @app.post("/api/events/generate")
-def generate(ref: ProgramRef):
-    p = _program(ref.program_id)
+def generate(ref: ProgramRef, uid: Optional[str] = Depends(optional_user)):
+    p = _program(ref.program_id, uid)
     g = _group(p, ref.group_id)
     plan = planner.run_agent(g, p.get("constraints"), p.get("location"))
     p.setdefault("plans", {})[g["id"]] = {"current": plan, "history": [], "approved": None}
@@ -189,8 +232,8 @@ def generate(ref: ProgramRef):
 
 
 @app.post("/api/events/revise")
-def revise(body: ReviseIn):
-    p = _program(body.program_id)
+def revise(body: ReviseIn, uid: Optional[str] = Depends(optional_user)):
+    p = _program(body.program_id, uid)
     g = _group(p, body.group_id)
     state = p.setdefault("plans", {}).get(g["id"])
     if not state:
@@ -224,8 +267,8 @@ def revise(body: ReviseIn):
 
 
 @app.post("/api/events/approve")
-def approve(body: ApproveIn):
-    p = _program(body.program_id)
+def approve(body: ApproveIn, uid: Optional[str] = Depends(optional_user)):
+    p = _program(body.program_id, uid)
     g = _group(p, body.group_id)
     state = (p.get("plans") or {}).get(g["id"])
     if not state:
@@ -255,8 +298,8 @@ def _metrics(plan):
 
 
 @app.post("/api/events/compare")
-def compare(ref: ProgramRef):
-    p = _program(ref.program_id)
+def compare(ref: ProgramRef, uid: Optional[str] = Depends(optional_user)):
+    p = _program(ref.program_id, uid)
     g = _group(p, ref.group_id)
     state = (p.get("plans") or {}).get(g["id"])
     qplan = state["current"] if state else planner.run_agent(g, p.get("constraints"), p.get("location"))
@@ -266,8 +309,8 @@ def compare(ref: ProgramRef):
 
 
 @app.get("/api/programs/{pid}/export", response_class=PlainTextResponse)
-def export(pid: str):
-    p = _program(pid)
+def export(pid: str, uid: Optional[str] = Depends(optional_user)):
+    p = _program(pid, uid)
     lines = [f"# {p.get('name', 'Culture Connect program')}", "", f"Area: {p.get('location') or '—'}", ""]
     for gid, st in (p.get("plans") or {}).items():
         con = st.get("approved") or (st["current"]["concepts"] or [None])[0]

@@ -48,6 +48,29 @@ def _affinity(item: dict):
     return q.get("affinity") if isinstance(q, dict) else None
 
 
+def _num(v):
+    try:
+        return float(v) if v is not None and v != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _place_fields(e: dict, props: dict) -> dict:
+    """Operational details Qloo returns for place entities, copied as-is (None when Qloo did not return them)."""
+    loc = e.get("location") if isinstance(e.get("location"), dict) else (props.get("location") if isinstance(props.get("location"), dict) else {})
+    lat = _num(loc.get("lat", loc.get("latitude")))
+    lon = _num(loc.get("lon", loc.get("lng", loc.get("longitude"))))
+    if lat is not None and lon is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        lat = lon = None
+    closed = props.get("is_closed", props.get("closed"))
+    return {"lat": lat, "lon": lon,
+            "hours": props.get("hours") if isinstance(props.get("hours"), (dict, list)) else None,
+            "website": props.get("website") if isinstance(props.get("website"), str) else None,
+            "phone": props.get("phone") if isinstance(props.get("phone"), str) else None,
+            "price_level": props.get("price_level"),
+            "is_closed": closed if isinstance(closed, bool) else None}
+
+
 def norm_entity(e: dict, source: str) -> dict:
     props = e.get("properties") or {}
     types = e.get("types") or []
@@ -63,6 +86,7 @@ def norm_entity(e: dict, source: str) -> dict:
         "description": _first(props, "short_description", "description", default=""),
         "image": img.get("url") if isinstance(img, dict) else img,
         "address": props.get("address"),
+        **_place_fields(e, props),
         "popularity": e.get("popularity"), "affinity": _affinity(e),
         "explainability": (e.get("query") or {}).get("explainability") if isinstance(e.get("query"), dict) else None,
         "tags": tags, "source": source,

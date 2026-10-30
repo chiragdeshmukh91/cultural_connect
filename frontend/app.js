@@ -10,9 +10,11 @@ const S = { meta: null, program: null, group: null, busy: false, compare: {} };
 
 // ------------------------------------------------------------------ utils
 async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json" };
+  try { const t = JSON.parse(localStorage.getItem("cc_token") || "null"); if (t) headers.Authorization = "Bearer " + t; } catch { /* no storage */ }
   const res = await fetch(path, {
     method: opts.method || (opts.body ? "POST" : "GET"),
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const text = await res.text();
@@ -55,7 +57,9 @@ async function route() {
   window.scrollTo(0, 0);
   // Individuals & Circles (circles.js) handle their own routes; organization routes below are unchanged.
   const first = (parts[0] || "").split("?")[0];
-  if (["join", "me", "circles", "my", "c"].includes(first) && window.ccRoute) { parts[0] = first; if (await window.ccRoute(parts)) return; }
+  if (["join", "me", "circles", "my", "c", "auth", "start", "dashboard", "activities", "orgs", "o", "org", "org-invite", "e", "notifications", "admin", "agent"].includes(first) && window.ccRoute) {
+    parts[0] = first; if (await window.ccRoute(parts)) return;
+  }
   if (parts[0] === "p" && parts[1]) {
     if (!S.program || S.program.id !== parts[1]) {
       try { S.program = await api(`/api/programs/${parts[1]}`); } catch { location.hash = "#/"; return; }
@@ -370,38 +374,83 @@ function candHtml(c, sel) {
   return `<button class="cand ${sel ? "sel" : ""}" data-cid="${esc(c.id)}" title="${esc(c.description || c.id)}">${thumb}
     <span><span class="kind ${c.kind}">${c.kind}</span> <b>${esc(c.name)}</b><small>${esc(prettyType(c.type))} · ${esc(c.source)}</small></span></button>`;
 }
-function slotInner(t) {
-  if (!t.candidates) return `<div class="cands"><span class="spinner"></span> <span class="muted small">Searching Qloo…</span></div>`;
-  const cs = t.candidates.candidates;
-  return `<div class="cands">${cs.length ? cs.map((c) => candHtml(c, (t.resolved || []).some((r) => r.id === c.id))).join("")
-    : `<span class="muted small">No Qloo match found. Try a broader word or another category — it still counts as a participant-provided interest.</span>`}</div>
-    ${t.candidates.warnings?.length ? `<div class="muted small">⚠ ${esc(t.candidates.warnings.join(" | "))}</div>` : ""}`;
+const MQ_SHOW = 5, mqOpen = new Set();
+const mqI = (k) => (window.wsIcon ? window.wsIcon(k) : "");
+const MQ_KIND = {
+  entity: '<svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="m3 7 9 5 9-5M12 12v10"/></svg>',
+  tag: '<svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>',
+  audience: '<svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg>'
+};
+const MQ_INTENT = { teach: "crown", learn: "book", share: "heart" };
+function mqChip(c, sel) {
+  const thumb = c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"/>` : `<span class="mq-k k-${esc(c.kind)}">${MQ_KIND[c.kind] || "•"}</span>`;
+  const tip = `${c.kind} · ${prettyType(c.type)} · ${c.source}${c.description ? " — " + c.description : ""}`;
+  return `<button type="button" class="mq-c ${sel ? "sel" : ""}" data-cid="${esc(c.id)}" title="${esc(tip)}" aria-pressed="${sel}">
+    <span class="mq-th">${thumb}${c.image ? `<span class="mq-kb k-${esc(c.kind)}">${MQ_KIND[c.kind] || ""}</span>` : ""}</span>
+    <span class="mq-n"><b>${esc(c.name)}</b><small>${esc(prettyType(c.type))}</small></span><span class="mq-ok">${mqI("check")}</span></button>`;
+}
+function slotInner(t, key) {
+  if (!t.candidates) return `<div class="mq-cs">${'<span class="mq-sk"></span>'.repeat(4)}</div>`;
+  const cs = t.candidates.candidates, sel = new Set((t.resolved || []).map((r) => r.id));
+  if (!cs.length) return `<div class="mq-none">${mqI("compass")} No Qloo match — try a broader word.</div>`;
+  const open = mqOpen.has(key);
+  const vis = open ? cs : cs.filter((c, i) => i < MQ_SHOW || sel.has(c.id));
+  const more = cs.length - vis.length;
+  return `<div class="mq-cs">${vis.map((c) => mqChip(c, sel.has(c.id))).join("")}
+    ${more > 0 ? `<button type="button" class="mq-more" data-more="${key}">+${more}</button>` : open && cs.length > MQ_SHOW ? `<button type="button" class="mq-more" data-more="${key}">Less</button>` : ""}</div>
+    ${t.candidates.warnings?.length ? `<div class="mq-none warn" title="${esc(t.candidates.warnings.join(" | "))}">⚠ Qloo warning</div>` : ""}`;
+}
+function mqCount(t) { return (t.resolved || []).length; }
+function mqPersonStat(x) {
+  const done = x.interests.filter((t) => mqCount(t)).length;
+  return `<span class="mq-pbar"><i style="width:${x.interests.length ? Math.round(100 * done / x.interests.length) : 0}%"></i></span><b>${done}/${x.interests.length}</b>`;
+}
+function mqTotals(p) {
+  let all = 0, done = 0;
+  p.participants.forEach((x) => x.interests.forEach((t) => { all++; if (mqCount(t)) done++; }));
+  return `<span class="mq-stat">${mqI("users")}<b>${p.participants.length}</b> people</span><span class="mq-stat ok">${mqI("check")}<b>${done}/${all}</b> matched</span>`;
+}
+function mqRefresh(pi, ii) {
+  const p = S.program, x = p.participants[pi], t = x.interests[ii], key = `${pi}-${ii}`;
+  const slot = app.querySelector(`[data-slot="${key}"]`); if (!slot) return;
+  slot.querySelector(".cslot").innerHTML = slotInner(t, key);
+  slot.querySelector(".mq-cnt").innerHTML = mqCount(t) ? `${mqI("check")}${mqCount(t)}` : "";
+  slot.classList.toggle("done", !!mqCount(t));
+  const card = slot.closest(".mq-p"); if (card) card.querySelector(".mq-prog").innerHTML = mqPersonStat(x);
+  const tot = app.querySelector("#mqTot"); if (tot) tot.innerHTML = mqTotals(p);
 }
 let resolving = false;
 function stepResolve() {
   const p = S.program;
+  const th = (l) => (window.wsTheme ? window.wsTheme(l) : { g: ["#5b3fd6", "#ec4899"], icon: "sparkle" });
   app.innerHTML = `${stepper("resolve")}
-  <div class="card">
-    <div class="title-row"><div><h2>2. Match interests to Qloo</h2><p>Each typed interest is searched across Qloo entities, tags and audiences. Confirm the right match(es) — only confirmed IDs are used.</p></div>
-      <button class="btn ghost" id="resAll">↻ Search all again</button></div>
-    <div id="resList">${p.participants.map((x, pi) => `<div class="person" style="display:block">
-      <div class="row"><div class="avatar" style="background:${color(pi)};width:38px;height:38px;font-size:.85rem">${esc(initials(x.name))}</div><h4>${esc(x.name)}</h4>
-      ${x.consent === false ? '<span class="badge participant">no consent – skipped in matching</span>' : ""}</div>
-      ${x.interests.map((t, ii) => `<div style="margin:10px 0 0 4px" data-slot="${pi}-${ii}">
-        <div class="row"><span class="int ${t.intent}">${esc(t.label)}</span><span class="muted small">${esc(t.intent)}${t.category ? " · " + prettyType(t.category) : ""}</span></div>
-        <div class="cslot">${slotInner(t)}</div>
-      </div>`).join("")}</div>`).join("")}</div>
-  </div>
+  <section class="mq">
+    <header class="mq-head"><span class="mq-logo">${mqI("sparkle")}</span>
+      <div class="mq-ht"><h2>Match to Qloo</h2><p>Tap to confirm · only ${mqI("check")} picks are used</p></div>
+      <div class="mq-tot" id="mqTot">${mqTotals(p)}</div>
+      <button class="btn ghost sm" id="resAll" title="Search Qloo again for every interest">↻ Refresh</button></header>
+    <div class="mq-legend"><span class="mq-k k-entity">${MQ_KIND.entity}</span>Entity<span class="mq-k k-tag">${MQ_KIND.tag}</span>Tag<span class="mq-k k-audience">${MQ_KIND.audience}</span>Audience</div>
+    <div id="resList" class="mq-grid">${p.participants.map((x, pi) => `<article class="mq-p">
+      <header><span class="avatar" style="background:${color(pi)}">${esc(initials(x.name))}</span><h4>${esc(x.name)}</h4>
+        ${x.consent === false ? `<span class="mq-nc" title="No consent — skipped in matching">${mqI("lock")}</span>` : ""}<span class="mq-prog">${mqPersonStat(x)}</span></header>
+      ${x.interests.map((t, ii) => { const g = th(t.label); return `<div class="mq-i ${mqCount(t) ? "done" : ""}" data-slot="${pi}-${ii}">
+        <div class="mq-ih"><span class="mq-ii" style="background:linear-gradient(135deg,${g.g.join(",")})">${mqI(g.icon)}</span>
+          <b>${esc(t.label)}</b><span class="mq-intent ${esc(t.intent)}" title="${esc(t.intent)}${t.category ? " · " + esc(prettyType(t.category)) : ""}">${mqI(MQ_INTENT[t.intent] || "sparkle")}${esc(t.intent)}</span>
+          <span class="mq-cnt">${mqCount(t) ? `${mqI("check")}${mqCount(t)}` : ""}</span></div>
+        <div class="cslot">${slotInner(t, `${pi}-${ii}`)}</div></div>`; }).join("")}</article>`).join("")}</div>
+  </section>
   <div class="row between" style="margin-top:18px"><button class="btn ghost" id="back">← Back</button>
     <button class="btn primary" id="next">Next: Discover bridges →</button></div>`;
   $("#resList").onclick = (ev) => {
+    const m = ev.target.closest("[data-more]");
+    if (m) { const k = m.dataset.more; mqOpen.has(k) ? mqOpen.delete(k) : mqOpen.add(k); const [pi, ii] = k.split("-").map(Number); return mqRefresh(pi, ii); }
     const b = ev.target.closest("[data-cid]"); if (!b) return;
     const [pi, ii] = b.closest("[data-slot]").dataset.slot.split("-").map(Number);
     const t = p.participants[pi].interests[ii]; t.resolved = t.resolved || [];
     const c = t.candidates.candidates.find((x) => x.id === b.dataset.cid);
     const ix = t.resolved.findIndex((r) => r.id === c.id);
     if (ix >= 0) t.resolved.splice(ix, 1); else { const { explainability, ...slim } = c; t.resolved.push(slim); }
-    b.classList.toggle("sel"); save();
+    save(); mqRefresh(pi, ii);
   };
   $("#back").onclick = () => go("group");
   $("#resAll").onclick = () => { p.participants.forEach((x) => x.interests.forEach((t) => delete t.candidates)); stepResolve(); bindStepper(); };
@@ -431,8 +480,7 @@ async function resolvePending() {
           .filter(Boolean).map(({ explainability, ...slim }) => slim);
       }
       changed = true;
-      const slot = app.querySelector(`[data-slot="${pi}-${ii}"] .cslot`);
-      if (slot) slot.innerHTML = slotInner(t);
+      mqRefresh(pi, ii);
     }
   };
   try { await Promise.all([worker(), worker(), worker()]); } finally { resolving = false; }
@@ -470,7 +518,7 @@ function graphSvg(g) {
 const evBadge = (src) => `<span class="badge ${src.startsWith("participant") ? "participant" : src === "qloo" ? "qloo" : "generated"}">${src.startsWith("participant") ? (src.includes("qloo") ? "participant · Qloo ID" : "participant") : src}</span>`;
 function stepDiscover() {
   const b = S.program.bridges;
-  if (!b) { app.innerHTML = `${stepper("discover")}<div class="card empty">Run matching first. <button class="btn primary" onclick="location.hash='#/p/${S.program.id}/resolve'">Go</button></div>`; return; }
+  if (!b) { app.innerHTML = `${stepper("discover")}<div class="card empty">Run matching first. <a class="btn primary" href="#/p/${S.program.id}/resolve">Go</a></div>`; return; }
   const g = b.groups.find((x) => x.id === S.group) || b.groups[0]; S.group = g?.id;
   const people = S.program.participants;
   app.innerHTML = `${stepper("discover")}
@@ -493,10 +541,23 @@ function stepDiscover() {
       <div class="cmp"><table><tr><th>Pair</th><th>Score</th><th>Evidence</th></tr>${b.pairs.sort((x, y) => y.score - x.score).map((x) => `<tr><td>${esc(x.a_name)} ↔ ${esc(x.b_name)}</td><td>${x.score}</td><td class="small">${x.evidence.map((e) => esc(e.kind)).join(", ")}</td></tr>`).join("")}</table></div></details>
   </div>
   <div class="row between" style="margin-top:18px"><button class="btn ghost" id="back">↻ Try different interests</button>
-    <button class="btn primary" id="next" ${g ? "" : "disabled"}>Next: Plan Activity →</button></div>`;
+    <div class="row">${S.program.org_id && g ? ((S.program.circles || {})[g.id]
+        ? `<a class="btn soft" href="#/c/${esc(S.program.circles[g.id])}">⭕ Open ${esc(g.id)} Circle</a>`
+        : `<button class="btn soft" id="mkCircle">⭕ Approve ${esc(g.id)} as a Circle</button>`) : ""}
+    <button class="btn primary" id="next" ${g ? "" : "disabled"}>Next: Plan Activity →</button></div></div>
+  <div id="circleOut"></div>`;
   app.querySelectorAll("[data-g]").forEach((x) => (x.onclick = () => { S.group = x.dataset.g; stepDiscover(); bindStepper(); }));
   $("#back").onclick = () => go("resolve");
   $("#next").onclick = () => go("plan");
+  const mk = $("#mkCircle");
+  if (mk) mk.onclick = (e) => withBusy(e.currentTarget, async () => {
+    // Organiser review step: turn this proposed group into a real invite-only organisation Circle.
+    const r = await api(`/api/orgs/${S.program.org_id}/programs/${S.program.id}/groups/${g.id}/circle`, { body: { name: "" } });
+    S.program = await api(`/api/programs/${S.program.id}`);
+    const link = `${location.origin}${location.pathname}#/c/${r.circle_id}?invite=${r.invite_code}`;
+    $("#circleOut").innerHTML = `<div class="notice">Circle created. Share this invite link with the participants — they sign in, request to join, and you approve them:<br/><code>${esc(link)}</code></div>`;
+    toast("Circle created from this group");
+  });
 }
 
 // ------------------------------------------------------------------ step 4: plan

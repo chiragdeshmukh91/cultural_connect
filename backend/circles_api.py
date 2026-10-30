@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 
+from . import agents
 from . import circles as svc
-from .auth import client_key, current_user, optional_user, rate_limit
+from .auth import current_user, optional_user, rate_limit
 
 router = APIRouter(prefix="/api")
 
@@ -45,6 +46,7 @@ class ProfileIn(BaseModel):
     interests: List[InterestIn] = Field(min_length=1, max_length=12)
     adult_confirmed: bool
     discoverable: bool
+    timezone: str = Field(default="", max_length=60)  # browser IANA zone, used to schedule agent-drafted activities
 
     @field_validator("adult_confirmed")
     @classmethod
@@ -166,6 +168,8 @@ class ConfirmIn(BaseModel):
     option: int = Field(ge=0, le=5)
     time_index: Optional[int] = Field(default=None, ge=0, le=5)
     location_note: Optional[str] = Field(default=None, max_length=200)
+    place_id: Optional[int] = None
+    timezone: str = Field(default="UTC", max_length=60)
 
 
 class RsvpIn(BaseModel):
@@ -174,9 +178,12 @@ class RsvpIn(BaseModel):
 
 # ---------------------------------------------------------------- me / profile
 @router.post("/me")
-def create_me(body: ProfileIn, request: Request):
-    rate_limit("signup:" + client_key(request), 5, 3600)
-    return svc.save_profile(None, body.model_dump())
+def create_me(body: ProfileIn, uid: str = Depends(current_user)):
+    """Create the individual profile for the signed-in account (accounts are created via /api/auth/signup)."""
+    rate_limit("profile:" + uid, 20)
+    out = svc.save_profile(uid, body.model_dump())
+    out["agent_run"] = agents.on_profile_saved(uid, "onboarding completed")  # automatic Qloo discovery, no manual search
+    return out
 
 
 @router.get("/me")
@@ -187,12 +194,16 @@ def read_me(uid: str = Depends(current_user)):
 @router.put("/me")
 def update_me(body: ProfileIn, uid: str = Depends(current_user)):
     rate_limit("profile:" + uid, 20)
-    return svc.save_profile(uid, body.model_dump())
+    out = svc.save_profile(uid, body.model_dump())
+    out["agent_run"] = agents.on_profile_saved(uid, "preferences changed")
+    return out
 
 
 @router.put("/me/consent")
 def consent(body: ConsentIn, uid: str = Depends(current_user)):
-    return svc.set_discovery(uid, body.discoverable)
+    out = svc.set_discovery(uid, body.discoverable)
+    agents.on_profile_saved(uid, "discovery consent turned on")
+    return out
 
 
 @router.delete("/me")
@@ -235,7 +246,9 @@ def browse(q: str = "", category: str = "", uid: Optional[str] = Depends(optiona
 @router.post("/circles")
 def create_circle(body: CircleIn, uid: str = Depends(current_user)):
     rate_limit("create-circle:" + uid, 5, 3600)
-    return svc.create_circle(uid, body.model_dump())
+    out = svc.create_circle(uid, body.model_dump())
+    agents.on_circle_changed(out["id"], "a new Circle matching your interests was created")
+    return out
 
 
 @router.get("/circles/{cid}")
@@ -251,12 +264,17 @@ def edit_circle(cid: str, body: CircleUpdate, uid: str = Depends(current_user)):
 @router.post("/circles/{cid}/join")
 def join(cid: str, invite: Optional[str] = None, uid: str = Depends(current_user)):
     rate_limit("join:" + uid, 20)
-    return svc.join(uid, cid, (invite or "")[:40] or None)
+    out = svc.join(uid, cid, (invite or "")[:40] or None)
+    agents.on_membership_changed(cid, "a member joined")
+    agents.refresh_user(uid, "you joined or requested to join a Circle")
+    return out
 
 
 @router.post("/circles/{cid}/leave")
 def leave(cid: str, uid: str = Depends(current_user)):
-    return svc.leave(uid, cid)
+    out = svc.leave(uid, cid)
+    agents.refresh_user(uid, "you left a Circle")
+    return out
 
 
 @router.get("/circles/{cid}/members")
@@ -266,7 +284,9 @@ def members(cid: str, uid: str = Depends(current_user)):
 
 @router.post("/circles/{cid}/members/{target}")
 def member_action(cid: str, target: str, body: MemberAction, uid: str = Depends(current_user)):
-    return svc.moderate_member(uid, cid, target, body.action)
+    out = svc.moderate_member(uid, cid, target, body.action)
+    agents.on_membership_changed(cid, f"moderator action: {body.action}")
+    return out
 
 
 # ---------------------------------------------------------------- discussion
@@ -332,12 +352,17 @@ def event(eid: str, uid: str = Depends(current_user)):
 
 @router.post("/circle-events/{eid}/vote")
 def vote(eid: str, body: VoteIn, uid: str = Depends(current_user)):
-    return svc.vote(uid, eid, body.kind, body.choice)
+    out = svc.vote(uid, eid, body.kind, body.choice)
+    agents.after_vote(eid)
+    return out
 
 
 @router.post("/circle-events/{eid}/confirm")
 def confirm(eid: str, body: ConfirmIn, uid: str = Depends(current_user)):
-    return svc.confirm_event(uid, eid, body.option, body.time_index, body.location_note)
+    out = svc.confirm_event(uid, eid, body.option, body.time_index, body.location_note, body.place_id, body.timezone)
+    if out.get("event_id"):
+        agents.on_event_changed(out["event_id"], "a new event matching your interests was published")
+    return out
 
 
 @router.post("/circle-events/{eid}/cancel")

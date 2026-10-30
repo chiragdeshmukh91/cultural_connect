@@ -46,8 +46,28 @@ def _clean(params: dict) -> dict:
     return out
 
 
+_inflight: dict[str, threading.Lock] = {}
+
+
 def request(method: str, path: str, params: dict | None = None, body: dict | None = None,
             use_cache: bool = True) -> dict:
+    """Identical concurrent requests are de-duplicated: the first caller fetches, the rest wait and reuse the cache."""
+    if not use_cache:
+        return _request(method, path, params, body, use_cache)
+    ck = _key(method, path, [_clean(params or {}), body])
+    with _lock:
+        lk = _inflight.setdefault(ck, threading.Lock())
+    with lk:
+        try:
+            return _request(method, path, params, body, use_cache)
+        finally:
+            with _lock:
+                if len(_inflight) > 2000:
+                    _inflight.clear()
+
+
+def _request(method: str, path: str, params: dict | None = None, body: dict | None = None,
+             use_cache: bool = True) -> dict:
     if not config.QLOO_API_KEY:
         raise QlooError("QLOO_API_KEY is not set. Add it to the .env file in the project root.", 500)
     params = _clean(params or {})

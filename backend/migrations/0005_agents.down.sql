@@ -1,0 +1,18 @@
+DROP INDEX IF EXISTS uq_agent_draft;
+ALTER TABLE place_candidates DROP COLUMN validation;
+ALTER TABLE place_candidates DROP COLUMN source_ref;
+ALTER TABLE circle_events DROP COLUMN selection;
+ALTER TABLE circle_events DROP COLUMN vote_deadline;
+ALTER TABLE circle_events DROP COLUMN run_id;
+ALTER TABLE circle_events DROP COLUMN source;
+ALTER TABLE circles DROP COLUMN approval_policy;
+ALTER TABLE circles DROP COLUMN auto_plan;
+ALTER TABLE profiles DROP COLUMN timezone;
+DROP INDEX IF EXISTS uq_notif_dedupe;
+ALTER TABLE notifications DROP COLUMN dedupe_key;
+DROP TABLE IF EXISTS circle_proposal_members;
+DROP TABLE IF EXISTS circle_proposals;
+DROP TABLE IF EXISTS user_discovery;
+DROP TABLE IF EXISTS agent_settings;
+DROP TABLE IF EXISTS agent_steps;
+DROP TABLE IF EXISTS agent_runs;

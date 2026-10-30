@@ -1,59 +1,12 @@
 """Integration tests for individuals + Circles, with Qloo replaced by deterministic fakes (no network)."""
-import re
 import sqlite3
 from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import auth, circles, config, db, main, planner
-from backend.qloo_client import QlooError
-
-RELATED = {"chess": "board games", "jazz": "blues"}
-
-
-def _n(s):
-    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
-
-
-def fake_resolve(label, category=None):
-    if _n(label) == "qloo down":
-        raise QlooError("Qloo HTTP 503", 503)
-    k = _n(label)
-    return {"label": label, "warnings": [], "candidates": [
-        {"kind": "tag", "id": f"T:{k}", "name": label.title(), "type": "urn:tag:keyword:qloo", "source": "GET /v2/tags", "match": 1.0},
-        {"kind": "entity", "id": f"E:{k}", "name": label.title(), "type": "urn:entity:book", "source": "GET /search", "match": 1.0},
-    ], "suggested": f"T:{k}", "suggested_ids": [f"T:{k}"]}
-
-
-def fake_taste(resolved, discovery_types=None):
-    tags = []
-    for r in resolved:
-        base = r["id"].split(":", 1)[1]
-        rel = RELATED.get(base)
-        if rel:
-            tags.append({"kind": "tag", "id": f"T:{rel}", "name": rel.title(), "affinity": 0.9})
-    return {"tags": tags, "entities": [], "requests": [{"filter.type": "urn:tag"}], "warnings": []}
-
-
-def fake_anchors(members, location, discovery_types=None, take=5):
-    return {"anchors": [{"kind": "entity", "id": "A1", "name": "Anchor Book", "type": "urn:entity:book", "image": None,
-                         "affinity": 0.8, "driven_by": [m["name"] for m in members][:2]}],
-            "venues": [], "requests": [{"filter.type": "urn:entity:book"}], "warnings": []}
-
-
-@pytest.fixture(autouse=True)
-def env(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "DB_PATH", tmp_path / "t.db")
-    db.migrate()
-    auth._hits.clear()
-    monkeypatch.setattr(circles, "resolve_interest", fake_resolve)
-    monkeypatch.setattr(circles, "taste_profile", fake_taste)
-    monkeypatch.setattr(main, "resolve_interest", fake_resolve)
-    monkeypatch.setattr(main, "taste_profile", fake_taste)
-    monkeypatch.setattr(planner, "group_anchors", fake_anchors)
-    yield
-
+from backend import auth, config, db, main
+from tests.conftest import _n, fake_resolve
 
 client = TestClient(main.app)
 
@@ -66,11 +19,24 @@ def profile(alias, interests, **kw):
     return body
 
 
+_n_accounts = [0]
+
+
+def account(email=None):
+    _n_accounts[0] += 1
+    email = email or f"user{_n_accounts[0]}@example.org"
+    r = client.post("/api/auth/signup", json={"email": email, "password": "Corr3ct-Horse-Battery"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
 def signup(alias, interests, **kw):
-    r = client.post("/api/me", json=profile(alias, interests, **kw))
+    h = account()
+    r = client.post("/api/me", json=profile(alias, interests, **kw), headers=h)
     assert r.status_code == 200, r.text
     d = r.json()
-    return {"Authorization": f"Bearer {d['token']}"}, d
+    d["token"] = h["Authorization"][7:]
+    return h, d
 
 
 def make_circle(h, prof, label, **kw):
@@ -87,7 +53,8 @@ def ncircles():
 
 # ---------------------------------------------------------------- onboarding + consent + Qloo
 def test_onboarding_adult_token_and_profile():
-    r = client.post("/api/me", json=profile("Asha", [("Chess", "teach")], adult_confirmed=False))
+    assert client.post("/api/me", json=profile("Asha", [("Chess", "teach")])).status_code == 401  # account required
+    r = client.post("/api/me", json=profile("Asha", [("Chess", "teach")], adult_confirmed=False), headers=account())
     assert r.status_code == 422
     h, d = signup("Asha", [("Chess", "teach")])
     assert d["token"] and d["profile"]["alias"] == "Asha"
@@ -102,7 +69,7 @@ def test_onboarding_adult_token_and_profile():
 def test_fabricated_qloo_ids_are_dropped():
     body = profile("Ravi", [("Chess", "enjoy")])
     body["interests"][0]["signals"] = [{"id": "T:chess"}, {"id": "MADE-UP-ID"}]
-    d = client.post("/api/me", json=body).json()
+    d = client.post("/api/me", json=body, headers=account()).json()
     ids = [s["id"] for s in d["profile"]["interests"][0]["signals"]]
     assert ids == ["T:chess"] and d["warnings"]
 
@@ -345,9 +312,9 @@ def test_organizer_workflow_regression():
 
 def test_migrations_are_reversible(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "m.db")
-    assert db.migrate() == ["0001", "0002", "0003"]
-    assert db.rollback("0002") == ["0003", "0002"]
+    assert db.migrate() == ["0001", "0002", "0003", "0004", "0005", "0006"]
+    assert db.rollback("0002") == ["0006", "0005", "0004", "0003", "0002"]
     with db.read() as c:
         assert not c.execute("SELECT name FROM sqlite_master WHERE name = 'circles'").fetchone()
         assert c.execute("SELECT name FROM sqlite_master WHERE name = 'programs'").fetchone()
-    assert db.migrate() == ["0002", "0003"]
+    assert db.migrate() == ["0002", "0003", "0004", "0005", "0006"]

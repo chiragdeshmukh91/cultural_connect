@@ -16,8 +16,9 @@
   const PREFS = [["in_person", "🧑‍🤝‍🧑 In person"], ["online", "💻 Online"], ["indoor", "🏠 Indoor"], ["outdoor", "🌳 Outdoor"]];
   const ACCESS = [["wheelchair", "♿ Step-free / wheelchair"], ["quiet_space", "🤫 Quiet space"], ["visual_aids", "🔎 Large print / visual aids"],
     ["captions", "💬 Captions"], ["flexible_participation", "🙌 Flexible participation"]];
-  const QUICK = [["♟️", "Chess"], ["🏏", "Cricket"], ["⚽", "Football"], ["🎵", "Jazz"], ["🎨", "Painting"], ["📚", "Poetry"],
-    ["🌍", "Climate action"], ["🩺", "Diabetes"], ["🧘", "Yoga"], ["🍳", "Cooking"], ["🎮", "Minecraft"], ["💬", "Politics"]];
+  const QUICK = [["🎵", "Music"], ["🏏", "Cricket"], ["✈️", "Travel"], ["📷", "Photography"], ["🎮", "Gaming"], ["📚", "Books"],
+    ["🌿", "Nature"], ["🤝", "Volunteering"], ["♟️", "Chess"], ["🎷", "Jazz"], ["🎨", "Painting"], ["🧘", "Yoga"], ["🍳", "Cooking"],
+    ["⚽", "Football"], ["🌍", "Climate action"], ["🩺", "Diabetes"]];
   const SRC = { declared: ["participant", "Declared"], qloo: ["qloo", "Qloo-derived"], preference: ["generated", "Preference"] };
   const fmtTime = (ts) => { try { return new Date(ts * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }); } catch { return ""; } };
   const fmtIso = (s) => { try { return new Date(s).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }); } catch { return s; } };
@@ -46,18 +47,20 @@
     return data;
   }
   async function loadMe(force = false) {
-    if (!CC.token) { CC.me = null; CC.meLoaded = true; return null; }
+    if (!CC.token) { CC.me = null; CC.auth = null; CC.meLoaded = true; navState(); return null; }
     if (CC.meLoaded && !force) return CC.me;
-    try { CC.me = await capi("/api/me"); }
-    catch (e) {
-      if (e.status === 401) { CC.token = null; store.del(LS_TOKEN); }
-      CC.me = null;
+    try {
+      CC.auth = await capi("/api/auth/me");
+      CC.me = CC.auth.has_profile ? await capi("/api/me") : null;
+    } catch (e) {
+      if (e.status === 401) { CC.token = null; store.del(LS_TOKEN); if (/expired/i.test(e.message)) toast(e.message, true); }
+      CC.me = null; CC.auth = null;
     }
     CC.meLoaded = true;
     navState();
     return CC.me;
   }
-  function setToken(t) { CC.token = t; store.set(LS_TOKEN, t); CC.meLoaded = false; }
+  function setToken(t) { CC.token = t; if (t) store.set(LS_TOKEN, t); else store.del(LS_TOKEN); CC.meLoaded = false; }
 
   // ------------------------------------------------------------------ draft from the playground (local only)
   const draft = () => store.get(LS_DRAFT, []);
@@ -88,30 +91,53 @@
     if (!nav) return;
     if (!nav.querySelector("[data-cc]")) {
       nav.querySelector('a[href="#/how"]')?.insertAdjacentHTML("beforebegin",
-        `<a href="#/circles" data-cc="circles">Circles</a><a href="#/my" data-cc="my" hidden>My Circles</a><a href="#/join" data-cc="join" class="nav-cta">Join</a>`);
+        `<a href="#/dashboard" data-cc="dash" hidden>Discover</a><a href="#/my" data-cc="my" hidden>My Circles</a><a href="#/me" data-cc="prof" hidden>Profile</a>
+         <a href="#/org" data-cc="orgr" hidden>Organiser</a>
+         <a href="#/notifications" data-cc="bell" class="bell" hidden aria-label="Notifications">🔔<span class="bell-n" hidden></span></a>
+         <a href="#/auth/signin" data-cc="join" class="nav-cta">Sign in</a>`);
+      const how = nav.querySelector('a[href="#/how"]');
+      if (how) how.after(nav.querySelector('[data-cc="join"]'));
     }
-    const signed = !!CC.me;
-    nav.querySelector('[data-cc="my"]').hidden = !signed;
+    const signed = !!CC.auth;
+    // Signed-in navigation is three destinations (Discover · My Circles · Profile); Home and How it works stay public.
+    nav.querySelector('[data-cc="dash"]').hidden = !CC.me;
+    nav.querySelector('[data-cc="my"]').hidden = !CC.me;
+    nav.querySelector('[data-cc="prof"]').hidden = !CC.me;
+    nav.querySelector('[data-cc="orgr"]').hidden = !(CC.auth && CC.auth.orgs && CC.auth.orgs.length);
+    nav.querySelector('[data-cc="bell"]').hidden = !signed;
+    nav.querySelectorAll('a[href="#/"], a[href="#/how"]').forEach((a) => (a.hidden = !!CC.me));
     const j = nav.querySelector('[data-cc="join"]');
-    j.textContent = signed ? `👤 ${CC.me.alias}` : "Join";
-    j.setAttribute("href", signed ? "#/me" : "#/join");
+    j.textContent = signed ? (CC.me ? CC.me.alias : "Finish setup") : "Sign in";
+    j.setAttribute("href", signed ? (CC.me ? "#/me" : "#/start") : "#/auth/signin");
+    j.hidden = !!CC.me;  // the Profile link covers it
+    if (window.ppNav) window.ppNav();
     const h = location.hash || "#/";
-    nav.querySelectorAll("a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") !== "#/" ? h.startsWith(a.getAttribute("href")) : h === "#/" || h === ""));
+    const ws = /^#\/(dashboard|circles|activities|orgs|agent)/.test(h);
+    nav.querySelectorAll("a").forEach((a) => a.classList.toggle("on", a.dataset.cc === "dash" ? ws : a.dataset.cc === "my" ? /^#\/(my|c\/)/.test(h)
+      : a.getAttribute("href") !== "#/" ? h.startsWith(a.getAttribute("href")) : h === "#/" || h === ""));
   }
 
   // ------------------------------------------------------------------ router hook (called by app.js route())
   window.ccRoute = async (parts) => {
     const r = (parts[0] || "").split("?")[0];
-    if (!["join", "me", "circles", "my", "c"].includes(r)) return false;
+    if (window.ppRoute && ["auth", "start", "dashboard", "activities", "orgs", "o", "org", "org-invite", "e", "notifications", "admin", "agent"].includes(r)) {
+      await loadMe(); renderDraftTray();
+      if (window.wsSet) window.wsSet(r);
+      try { await window.ppRoute(r, parts); } catch (e) { fail(e); }
+      return true;
+    }
+    if (!["join", "me", "circles", "my", "c"].includes(r)) { if (window.wsSet) window.wsSet(r); return false; }
     await loadMe();
+    if (window.wsSet) window.wsSet(r);
     navState();
     renderDraftTray();
     try {
+      if ((r === "join" || r === "me" || r === "my") && !CC.auth) { location.hash = `#/auth/${r === "join" ? "signup" : "signin"}?next=${r}`; return true; }
       if (r === "join") await (CC.me ? viewProfile(true) : viewJoin());
-      else if (r === "me") await (CC.me ? viewProfile(false) : viewRestore());
+      else if (r === "me") await (CC.me ? viewProfile(false) : viewJoin());
       else if (r === "circles") await viewDiscover(parts[1]);
       else if (r === "my") await (CC.me ? viewMy() : viewRestore());
-      else if (r === "c" && parts[1]) await viewCircle(parts[1].split("?")[0], (parts[2] || "discussion").split("?")[0]);
+      else if (r === "c" && parts[1]) await viewCircle(parts[1].split("?")[0], (parts[2] || "chat").split("?")[0]);
       else return false;
     } catch (e) { fail(e); }
     return true;
@@ -129,11 +155,12 @@
   function decorateHome() {
     const nb = document.getElementById("newBlank");
     if (!nb || document.getElementById("joinIndividual")) return;
-    nb.textContent = "Organize a group →";
-    nb.classList.remove("primary"); nb.classList.add("ghost");
-    nb.insertAdjacentHTML("beforebegin", `<a class="btn primary" id="joinIndividual" href="${CC.me ? "#/circles" : "#/join"}">${CC.me ? "🧭 Find my Circles" : "✨ Join as an individual"}</a>`);
+    // Two clear entry points; the anonymous organiser demo stays available as a small link.
+    nb.insertAdjacentHTML("beforebegin", `<a class="btn primary" id="joinIndividual" href="${CC.me ? "#/dashboard" : CC.auth ? "#/join" : "#/auth/signup?next=join"}">🧭 Find My Circle</a>
+      <a class="btn ghost" id="orgEntry" href="${CC.auth ? "#/org" : "#/auth/signup?next=org"}">🏢 ${CC.auth && CC.auth.orgs && CC.auth.orgs.length ? "Manage my Organisation" : "Start an Organisation"}</a>`);
+    nb.hidden = true;
     const sample = document.getElementById("newSample");
-    if (sample) { sample.classList.remove("ghost"); sample.classList.add("soft"); sample.textContent = "Try a sample organization"; }
+    if (sample) { sample.className = "linkbtn demo-link"; sample.textContent = "▶ Try the organiser demo (sample data)"; }
   }
 
   // ------------------------------------------------------------------ onboarding / profile form
@@ -147,46 +174,60 @@
     const ints = (p.interests || []).map((i) => ({ label: i.label, intent: i.intent, signals: (i.signals || []).map((s) => ({ ...s })), candidates: null, category: "" }));
     draft().forEach((d) => { if (!ints.some((i) => i.label.toLowerCase() === d.label.toLowerCase())) ints.push({ label: d.label, intent: "enjoy", signals: null, candidates: null }); });
     const st = { ints };
+    const I = (k) => (window.wsIcon ? window.wsIcon(k) : "");
+    const th = (t) => (window.wsTheme ? window.wsTheme(t) : { g: ["#5b3fd6", "#ec4899"], icon: "sparkle" });
+    const tops = (p.interests || []).slice(0, 3).map((i) => i.label);
+    const heroTheme = th(tops.join(" "));
+    const chipRow = (name, opts, sel) => `<div class="pf-chips" role="group" aria-label="${esc(name)}">${opts.map(([v, l]) =>
+      `<button type="button" class="pf-chip goal ${sel.includes(v) ? "on" : ""}" data-multi="${name}" data-v="${v}" aria-pressed="${sel.includes(v)}">${l}</button>`).join("")}</div>`;
+    const toggle = (id, on, icon, title, sub) => `<label class="pf-toggle"><input type="checkbox" id="${id}" ${on ? "checked" : ""}/>
+      <span class="pt-ic">${I(icon)}</span><span class="pt-t"><b>${title}</b><small>${sub}</small></span><span class="sw"></span></label>`;
     app.innerHTML = `
-    <div class="title-row"><div><span class="how-kicker">${mode === "join" ? "✨ Join as an individual" : "👤 My profile"}</span>
-      <h2 style="margin-top:10px">${mode === "join" ? "Find your people" : "Edit your profile"}</h2>
-      <p>${mode === "join" ? "Tell us what you love, can teach or want to learn. Nothing is shared until you choose to." : "Changes apply to future matches. You stay in control of what members see."}</p></div></div>
-    <form id="pf" class="grid2 join-grid" novalidate>
-      <div class="card cc"><div class="cc-head"><span class="cc-badge">${ICON.users}</span><div><h2>About you</h2><p>Pseudonyms welcome</p></div><span class="cc-orb a"></span></div>
-        <div class="cc-body">
-          <div class="field"><label for="fAlias">Display name or alias *</label><div class="iwrap">${ICON.flag}<input id="fAlias" type="text" required minlength="2" maxlength="40" value="${esc(p.alias || "")}" autocomplete="nickname"/></div></div>
-          <div class="field"><label for="fArea">Broad area <span class="hint">· city or neighbourhood, never your address</span></label><div class="iwrap">${ICON.pin}<input id="fArea" type="text" maxlength="60" value="${esc(p.area || "")}" placeholder="e.g. Pune, Kothrud"/></div></div>
-          <div class="grid2"><div class="field"><label for="fLang">Preferred language (optional)</label><input id="fLang" type="text" maxlength="30" value="${esc(p.language || "")}" placeholder="e.g. Marathi"/></div>
-            <div class="field"><label for="fBudget">Max spend per event (optional, private)</label><input id="fBudget" type="number" min="0" max="10000" value="${p.budget_max ?? ""}"/></div></div>
-          <div class="field"><label for="fBio">Short bio (optional, shown only if you share your interests)</label><textarea id="fBio" maxlength="280" rows="2">${esc(p.bio || "")}</textarea></div>
-          <label class="switch"><input type="checkbox" id="fAdult" ${mode !== "join" ? "checked" : ""}/><span class="sw"></span><span class="si">🔞</span> I am 18 or older *</label>
-          <p class="muted small">Self-serve Circles are adults-only. Under-18s can take part through a school, club or other organization.</p>
-        </div></div>
-      <div class="card"><h3>🎯 Your interests & issues *</h3>
-        <p class="muted small">Games, sports, arts, causes, a health topic you want to talk about… Health and political topics are optional — joining such a Circle is visible to its members.</p>
-        <div class="quickpicks" aria-label="Quick picks — drag into the box or press to add">${QUICK.map(([e, l]) => `<button type="button" class="qp" draggable="true" data-qp="${esc(l)}" data-emoji="${e}">${e} ${esc(l)}</button>`).join("")}</div>
-        <div class="dropzone" id="dz" tabindex="-1"><div class="row" style="flex-wrap:nowrap">
-          <input id="fInt" type="text" maxlength="60" placeholder="Type any interest or drop a bubble here…" aria-label="Add an interest"/>
-          <button class="btn soft sm" type="button" id="fIntAdd">Add</button></div>
+    <section class="pf-hero" style="--g1:${heroTheme.g[0]};--g2:${heroTheme.g[1]}">
+      <span class="pf-blob b1"></span><span class="pf-blob b2"></span>
+      <div class="pf-avatar"><span>${esc((p.alias || "You").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase())}</span><i>${I(heroTheme.icon)}</i></div>
+      <div class="pf-id"><span class="pf-kick">${mode === "join" ? "Let's get you matched" : "Your profile"}</span>
+        <h1>${mode === "join" ? "Find your people" : esc(p.alias)}</h1>
+        <div class="pf-meta">${p.area ? `<span>${I("pin")}${esc(p.area)}</span>` : ""}<span>${I("sparkle")}${(p.interests || []).length} interests</span>
+          <span class="${p.discoverable ? "on" : "off"}">${I("compass")}Discovery ${p.discoverable ? "on" : "off"}</span></div></div>
+      ${tops.length ? `<div class="pf-tops">${tops.map((t) => `<span style="background:linear-gradient(135deg,${th(t).g.join(",")})">${I(th(t).icon)}${esc(t)}</span>`).join("")}</div>` : ""}
+    </section>
+    <form id="pf" class="pf-grid" novalidate><div class="pf-col">
+      <section class="pf-card pf-int"><header class="hc-pink">${I("sparkle")}<h2>Your interests</h2><span class="req">required</span></header>
+        <div class="quickpicks pf-qp" aria-label="Quick picks — tap or drag to add">${QUICK.map(([e, l]) => { const t = th(l); return `<button type="button" class="qp" draggable="true" data-qp="${esc(l)}" data-emoji="${e}" style="--g1:${t.g[0]};--g2:${t.g[1]}"><span class="qp-ic">${I(t.icon)}</span>${esc(l)}</button>`; }).join("")}</div>
+        <div class="dropzone" id="dz" tabindex="-1"><div class="pf-add">${I("search")}
+          <input id="fInt" type="text" maxlength="60" placeholder="Add anything — a band, a sport, a cause…" aria-label="Add an interest"/>
+          <button class="btn primary sm" type="button" id="fIntAdd">Add</button></div>
           <div id="intList" aria-live="polite"></div></div>
-      </div>
-      <div class="card"><h3>🗓 Preferences <span class="muted small">(all optional, private)</span></h3>
-        <label>Availability</label>${chipGroup("availability", AVAIL, p.availability || [])}
-        <label>How you like to meet</label>${chipGroup("activity_prefs", PREFS, p.activity_prefs || [])}
-        <label>Accessibility needs <span class="hint">· used as hard requirements, never shown to others</span></label>${chipGroup("accessibility", ACCESS, p.accessibility || [])}
-        <div class="field"><label for="fExcl">Never recommend topics (comma-separated)</label><input id="fExcl" type="text" maxlength="200" value="${esc((p.exclude_topics || []).join(", "))}"/></div>
-      </div>
-      <div class="card"><h3>🔒 Privacy & consent</h3>
-        <label class="switch"><input type="checkbox" id="fDisc" ${p.discoverable ? "checked" : ""}/><span class="sw"></span><span class="si">🧭</span> Use my profile to recommend Circles (discovery consent)</label>
-        <label class="switch"><input type="checkbox" id="fShowArea" ${p.show_area ? "checked" : ""}/><span class="sw"></span><span class="si">📍</span> Show my broad area to fellow members</label>
-        <label class="switch"><input type="checkbox" id="fShare" ${p.share_interests ? "checked" : ""}/><span class="sw"></span><span class="si">🎯</span> Show my interests & bio to fellow members, and let Circle planning use them</label>
-        <div class="visible-box"><b>Who sees what</b><ul>
-          <li><b>Members of Circles you join:</b> your alias${"" /* */}, your role, and — only if switched on — your area, interests and bio.</li>
-          <li><b>Never shown to anyone:</b> budget, availability, accessibility needs, excluded topics. They're used only as private constraints.</li>
-          <li><b>Qloo</b> receives only interest names/IDs from our server — never your alias or area. Withdraw consent or delete everything anytime.</li></ul></div>
-      </div>
-      <div class="row between join-actions">${mode === "join" ? `<a class="btn ghost" href="#/me">Have a recovery key?</a>` : `<span></span>`}
-        <button class="btn primary" type="submit" id="pfSubmit">${mode === "join" ? "Create profile & find Circles →" : "Save changes"}</button></div>
+        <p class="pf-hint">${I("compass")} Qloo links each interest to cultural signals. Health or political topics are optional.</p>
+      </section></div><div class="pf-col">
+      <section class="pf-card"><header>${I("user")}<h2>About you</h2></header>
+        <div class="pf-fields">
+          <label class="pf-f"><span>${I("user")}Name or alias *</span><input id="fAlias" type="text" required minlength="2" maxlength="40" value="${esc(p.alias || "")}" autocomplete="nickname"/></label>
+          <label class="pf-f"><span>${I("pin")}Area</span><input id="fArea" type="text" maxlength="60" value="${esc(p.area || "")}" placeholder="City or neighbourhood"/></label>
+          <label class="pf-f"><span>${I("mic")}Language</span><input id="fLang" type="text" maxlength="30" value="${esc(p.language || "")}" placeholder="Optional"/></label>
+          <label class="pf-f"><span>${I("lock")}Max spend / event</span><input id="fBudget" type="number" min="0" max="10000" value="${p.budget_max ?? ""}" placeholder="Private"/></label>
+          <label class="pf-f wide"><span>${I("book")}Short bio</span><textarea id="fBio" maxlength="280" rows="2" placeholder="Optional — shown only if you share interests">${esc(p.bio || "")}</textarea></label>
+        </div>
+        <label class="pf-adult ${mode === "join" ? "" : "pf-hide"}"><input type="checkbox" id="fAdult" ${mode !== "join" ? "checked" : ""}/> <b>I'm 18 or older</b> <small>· required for self-serve Circles</small></label>
+      </section>
+      <section class="pf-card pf-vibe"><header class="hc-amber">${I("sparkle")}<h2>Your vibe</h2><span class="opt">optional · private</span></header>
+        <div class="pf-row"><span class="pf-l">${I("calendar")}When</span>${chipRow("availability", AVAIL, p.availability || [])}</div>
+        <div class="pf-row"><span class="pf-l">${I("users")}How</span>${chipRow("activity_prefs", PREFS, p.activity_prefs || [])}</div>
+        <div class="pf-row"><span class="pf-l">${I("heart")}Access</span>${chipRow("accessibility", ACCESS, p.accessibility || [])}</div>
+        <label class="pf-row"><span class="pf-l">${I("x")}Avoid</span><input id="fExcl" type="text" maxlength="200" value="${esc((p.exclude_topics || []).join(", "))}" placeholder="Topics never to recommend, comma-separated"/></label>
+      </section>
+      <section class="pf-card"><header class="hc-indigo">${I("lock")}<h2>Privacy &amp; visibility</h2></header>
+        ${toggle("fDisc", p.discoverable, "compass", "Auto-discovery", "Recommend Circles & events for me")}
+        ${toggle("fShowArea", p.show_area, "pin", "Show my area", "To members of my Circles")}
+        ${toggle("fShare", p.share_interests, "users", "Share my interests", "With my Circles & their planning")}
+        <details class="pf-who"><summary>${I("lock")} Who sees what?</summary><ul>
+          <li><b>Members:</b> your alias and role — area, interests and bio only if you switch them on.</li>
+          <li><b>Nobody:</b> budget, availability, accessibility needs, avoided topics.</li>
+          <li><b>Qloo:</b> only interest names/IDs from our server — never your alias or area.</li></ul></details>
+      </section></div>
+      <div class="pf-save"><span class="pf-save-t">${I("refresh")}<span>${mode === "join" ? "Only your name and interests are required." : "Saving refreshes your recommendations."}</span></span>
+        <span class="row">${mode === "join" ? "" : `<button class="btn ghost" type="button" id="pfDiscard">Discard</button>`}<button class="btn primary" type="submit" id="pfSubmit">${mode === "join" ? "Finish & see my recommendations →" : "Save changes"}</button></span></div>
     </form>`;
     const root = document.getElementById("pf");
     root.querySelectorAll("[data-multi]").forEach((b) => (b.onclick = () => { b.classList.toggle("on"); b.setAttribute("aria-pressed", b.classList.contains("on")); }));
@@ -195,14 +236,14 @@
     const timers = {};
     function drawInts() {
       list.innerHTML = st.ints.length ? st.ints.map((t, i) => `<div class="int-row" data-i="${i}">
-        <div class="row between"><b>${esc(t.label)}</b><div class="row">
+        <div class="row between"><span class="ir-h">${window.wsTheme ? `<span class="ir-ic" style="background:linear-gradient(135deg,${window.wsTheme(t.label).g.join(",")})">${window.wsIcon(window.wsTheme(t.label).icon)}</span>` : ""}<b>${esc(t.label)}</b></span><div class="row">
           <select data-intent="${i}" aria-label="Intent for ${esc(t.label)}">${INTENTS.map(([v, l]) => `<option value="${v}" ${t.intent === v ? "selected" : ""}>${l}</option>`).join("")}</select>
           <button type="button" class="iconbtn" data-rm="${i}" aria-label="Remove ${esc(t.label)}">✕</button></div></div>
         <div class="cands">${t.candidates ? (t.candidates.length ? t.candidates.map((c) => candHtml(c, (t.signals || []).some((s) => s.id === c.id))).join("")
           : `<span class="muted small">${esc(t.error || "No Qloo match — it still counts as your declared interest.")}</span>`)
           : t.signals && t.signals.length ? t.signals.map((s) => candHtml({ ...s, description: "", source: s.source || "saved" }, true)).join("") + `<button type="button" class="btn soft sm" data-research="${i}">↻ Search Qloo again</button>`
           : `<span class="muted small"><span class="spinner"></span> Matching with Qloo…</span>`}</div></div>`).join("")
-        : `<div class="empty-mini">👆 Add at least one interest — drag a bubble, press one, or type your own.</div>`;
+        : `<div class="empty-mini">Tap a bubble above or type your own.</div>`;
       list.querySelectorAll("[data-intent]").forEach((s) => (s.onchange = () => (st.ints[+s.dataset.intent].intent = s.value)));
       list.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => { st.ints.splice(+b.dataset.rm, 1); drawInts(); }));
       list.querySelectorAll("[data-research]").forEach((b) => (b.onclick = () => resolveOne(st.ints[+b.dataset.research])));
@@ -259,7 +300,8 @@
         if (alias.length < 2) { document.getElementById("fAlias").focus(); return toast("Please add an alias (2+ characters)", true); }
         if (!document.getElementById("fAdult").checked) return toast("Self-serve Circles are for adults (18+)", true);
         if (!st.ints.length) { inp.focus(); return toast("Add at least one interest", true); }
-        if (st.ints.some((t) => !t.candidates && !(t.signals && t.signals.length))) return toast("Still matching with Qloo — one moment…", true);
+        // Don't make people wait for Qloo: interests still matching are saved as declared and the discovery agent resolves them.
+        const pendingQ = st.ints.some((t) => !t.candidates && !(t.signals && t.signals.length));
         const b = document.getElementById("fBudget").value;
         const body = {
           alias, area: document.getElementById("fArea").value.trim(), language: document.getElementById("fLang").value.trim(),
@@ -269,13 +311,16 @@
           adult_confirmed: true, discoverable: document.getElementById("fDisc").checked,
           show_area: document.getElementById("fShowArea").checked, share_interests: document.getElementById("fShare").checked,
           interests: st.ints.map((t) => ({ label: t.label, intent: t.intent, signals: (t.signals || []).map((s) => ({ id: s.id, kind: s.kind })) })),
+          timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } })(),
         };
         const res = await capi("/api/me", { method: mode === "join" ? "POST" : "PUT", body });
         (res.warnings || []).forEach((w) => toast(w));
-        if (res.token) { setToken(res.token); store.del(LS_DRAFT); }
-        CC.me = res.profile; CC.meLoaded = true; CC.rec = null; navState();
-        if (res.token) showRecovery(res.token);
-        else { toast("Profile saved ✓"); location.hash = "#/circles"; }
+        store.del(LS_DRAFT);
+        CC.me = res.profile; CC.rec = null; await loadMe(true);
+        toast(mode === "join" ? "Profile created ✓" : "Profile saved ✓");
+        if (res.agent_run) toast(pendingQ ? "🤖 Discovery started — we'll finish matching your interests with Qloo" : "🤖 Discovery started — finding Circles and events for you");
+        else if (mode === "join" && !body.discoverable) toast("Discovery consent is off, so we can't recommend Circles yet. You can turn it on anytime.");
+        location.hash = "#/dashboard";
       });
     };
   }
@@ -293,23 +338,28 @@
     if (!p) return viewJoin();
     profileForm(p, "edit");
     const blocks = await capi("/api/me/blocks").catch(() => []);
-    app.insertAdjacentHTML("beforeend", `<div class="grid2" style="margin-top:18px">
-      <div class="card"><h3>🧭 Discovery</h3><p class="muted small">${p.discoverable ? `Consent given ${fmtTime(p.consent_at)}. Your profile is used to recommend Circles.` : "Discovery is off — you won't get recommendations and your Qloo taste cache is deleted."}</p>
-        <button class="btn ${p.discoverable ? "danger" : "primary"} sm" id="consentBtn">${p.discoverable ? "Withdraw discovery consent" : "Turn discovery on"}</button>
-        ${p.taste_retrieved_at ? `<p class="muted small">Qloo taste insights last retrieved ${fmtTime(p.taste_retrieved_at)}.</p>` : ""}
-        <h3 style="margin-top:18px">🚫 Blocked people</h3>${blocks.length ? blocks.map((b) => `<div class="row between"><span>${esc(b.alias || "Unknown")}</span><button class="btn soft sm" data-unblock="${esc(b.user_id)}">Unblock</button></div>`).join("") : `<p class="muted small">You haven't blocked anyone.</p>`}</div>
-      <div class="card"><h3>🔑 Recovery key</h3><p class="muted small">Use it to open your profile on another device.</p>
-        <div class="keybox"><code>${"•".repeat(24)}</code><button class="btn soft sm" id="showKey" type="button">Reveal</button></div>
-        <div class="row" style="margin-top:12px"><button class="btn ghost sm" id="signOut">Sign out on this device</button></div>
-        <h3 style="margin-top:18px">🗑 Delete my account</h3>
-        <p class="muted small">Deletes your profile, interests, Qloo mappings, memberships, votes, RSVPs and blocks. Your posts are erased (threads keep a “[deleted account]” placeholder). Circles you host pass to another member or are archived.</p>
-        <button class="btn danger sm" id="delMe">Delete everything</button></div></div>`);
+    const I = (k) => (window.wsIcon ? window.wsIcon(k) : "");
+    app.insertAdjacentHTML("beforeend", `<section class="pf-card pf-acct"><header class="hc-slate">${I("gear")}<div class="pf-ht"><h2>Account settings</h2><small>Sign-in, recommendations and safety</small></div></header>
+      <div class="pf-acct-grid">
+        <div class="pf-panel"><span class="pf-ph">${I("idcard")} Account</span>${window.ppAccountCard ? window.ppAccountCard() : ""}</div>
+        <div class="pf-panel"><span class="pf-ph g">${I("compass")} Recommendations<span class="pf-pill ${p.discoverable ? "ok" : "off"}">${p.discoverable ? "Active" : "Off"}</span></span>
+          <p class="pf-pt">${p.discoverable ? "Qloo-powered discovery updates your Circles and events as things change." : "Off — no recommendations; your Qloo taste cache is deleted."}</p>
+          ${p.discoverable && (p.consent_at || p.taste_retrieved_at) ? `<div class="pf-times">${p.consent_at ? `<div><small>On since</small><b>${fmtTime(p.consent_at)}</b></div>` : ""}${p.taste_retrieved_at ? `<div><small>Qloo insights updated</small><b>${fmtTime(p.taste_retrieved_at)}</b></div>` : ""}</div>` : ""}
+          <div class="pf-btns"><button type="button" class="btn ${p.discoverable ? "ghost" : "primary"} sm" id="consentBtn">${p.discoverable ? "Turn off" : "Turn on"}</button><a class="btn soft sm" href="#/agent/settings">${I("bot")} Agent settings</a></div></div>
+        <div class="pf-panel"><span class="pf-ph r">${I("shield")} Safety</span>
+          <div class="pf-blk"><span>${I("ban")}<span><b>Blocked profiles</b><small>${blocks.length ? `${blocks.length} blocked` : "Nobody blocked"}</small></span></span><em>${blocks.length}</em></div>
+          ${blocks.map((b) => `<div class="pf-blk-r"><span>${esc(b.alias || "Unknown")}</span><button type="button" class="btn soft sm" data-unblock="${esc(b.user_id)}">Unblock</button></div>`).join("")}
+          <div class="pf-del"><div class="row between"><b>${I("trash")} Delete account</b></div>
+            <details><summary>What gets deleted?</summary><p>Profile, interests, Qloo mappings, memberships, votes, RSVPs and blocks. Posts are erased; Circles you host pass to another member or are archived.</p></details>
+            <button type="button" class="btn danger sm" id="delMe">Delete everything</button></div></div>
+      </div></section>`);
+    const dsc = document.getElementById("pfDiscard");
+    if (dsc) dsc.onclick = () => viewProfile();
     document.getElementById("consentBtn").onclick = (e) => withBusy(e.currentTarget, async () => {
       CC.me = await capi("/api/me/consent", { method: "PUT", body: { discoverable: !p.discoverable } }); CC.rec = null; viewProfile();
     });
     app.querySelectorAll("[data-unblock]").forEach((b) => (b.onclick = (e) => withBusy(e.currentTarget, async () => { await capi("/api/me/blocks", { body: { user_id: b.dataset.unblock, blocked: false } }); viewProfile(); })));
-    document.getElementById("showKey").onclick = (e) => { e.currentTarget.previousElementSibling.textContent = CC.token; };
-    document.getElementById("signOut").onclick = () => { if (!confirm("Sign out? You'll need your recovery key to come back.")) return; setToken(null); store.del(LS_TOKEN); CC.me = null; location.hash = "#/"; };
+    if (window.ppBindAccountCard) window.ppBindAccountCard();
     document.getElementById("delMe").onclick = (e) => {
       if (prompt('Type DELETE to permanently delete your account') !== "DELETE") return;
       withBusy(e.currentTarget, async () => { await capi("/api/me", { method: "DELETE" }); store.del(LS_TOKEN); CC.token = null; CC.me = null; toast("Account deleted"); location.hash = "#/"; });
@@ -361,17 +411,20 @@
     ${CC.me && !CC.me.discoverable ? `<div class="notice">Discovery is off, so we can't recommend Circles. <a href="#/me">Turn it on in your profile</a> — or browse below.</div>` : ""}
     ${rec ? `<h2 class="sec-h">✨ Recommended for you</h2>
       ${(rec.warnings || []).map((w) => `<div class="notice">${esc(w)}</div>`).join("")}
-      ${recs.length ? `<div class="grid2">${recs.map((c) => circleCard(c, `<details class="why-box" open><summary>Why this Circle?</summary>${reasonList(c.reasons)}<p class="muted tiny">${esc(c.rank_basis)}</p></details>
+      ${recs.length && window.wsCircleTile ? `<div class="cc-tiles">${recs.map((c) => window.wsCircleTile(c)).join("")}</div>`
+        : recs.length ? `<div class="grid2">${recs.map((c) => circleCard(c, `<details class="why-box" open><summary>Why this Circle?</summary>${reasonList(c.reasons)}<p class="muted tiny">${esc(c.rank_basis)}</p></details>
           <div class="row between"><button class="btn ghost sm" data-skip="${esc(c.id)}">Skip</button><div class="row"><a class="btn soft sm" href="#/c/${esc(c.id)}">View</a><button class="btn primary sm" data-join="${esc(c.id)}">Join Circle</button></div></div>`)).join("")}</div>`
         : `<div class="card empty-state"><div class="es-ic">🌱</div><h3>No existing Circle fits yet</h3><p class="muted">That's how every community starts. Create one below — others with the same interest will be matched to it.</p></div>`}
       ${exc.length ? `<p class="muted small">Hidden because they don't meet your requirements: ${exc.map(([k, v]) => `${v} × ${esc(k)}`).join(", ")}. Requirements always win over taste matches.</p>` : ""}
-      ${rec.create_suggestions.length ? `<h2 class="sec-h">🌱 Start a new Circle</h2><div class="grid3">${rec.create_suggestions.map((s) => `<div class="card start-card">
-          <h3>${esc(s.label)}</h3><p class="muted small">${s.signals.length ? `Linked to Qloo: ${s.signals.map((x) => esc(x.name)).join(", ")}` : "Declared interest (no Qloo ID)"}</p>
+      ${rec.create_suggestions.length ? `<h2 class="sec-h">🌱 Start a new Circle</h2><div class="cc-tiles">${rec.create_suggestions.map((s) => `<div class="card start-card">${window.wsArt ? window.wsArt(s.label, `<span class="date-badge prop-b">New</span>`) : ""}
+          <h3>${esc(s.label)}</h3><p class="muted small">${s.signals.length ? `Linked to Qloo: ${[...new Set(s.signals.map((x) => x.name))].map(esc).join(", ")}` : "Declared interest (no Qloo ID)"}</p>
           ${s.suggested_category !== "general" ? `<span class="badge ${s.suggested_category === "health" ? "participant" : "generated"}">${s.suggested_category} topic</span>` : ""}
           <button class="btn primary sm" data-create="${s.interest_id}">Create “${esc(s.label)}” Circle</button></div>`).join("")}</div>` : ""}` : ""}
     <h2 class="sec-h">🔎 Browse all public Circles</h2>
     <form class="row" id="bf"><input type="search" id="bq" value="${esc(q)}" placeholder="Search Circles…" aria-label="Search Circles" style="max-width:360px"/><button class="btn soft sm">Search</button></form>
-    <div class="grid3" style="margin-top:12px">${all.length ? all.map((c) => circleCard(c, `<div class="row end"><a class="btn soft sm" href="#/c/${esc(c.id)}">${c.my_status === "active" ? "Open" : "View"}</a></div>`)).join("")
+    <div class="${window.wsCircleTile ? "cc-tiles" : "grid3"}" style="margin-top:12px">${all.length ? all.map((c) => window.wsCircleTile ? window.wsCircleTile(c, { noReason: true,
+        action: `<a class="btn ${c.my_status === "active" ? "primary" : "soft"} sm" href="#/c/${esc(c.id)}">${c.my_status === "active" ? "Open" : c.my_status === "pending" ? "Pending" : "View"}</a>` })
+      : circleCard(c, `<div class="row end"><a class="btn soft sm" href="#/c/${esc(c.id)}">${c.my_status === "active" ? "Open" : "View"}</a></div>`)).join("")
       : `<div class="card empty-state" style="grid-column:1/-1"><div class="es-ic">⭕</div><h3>No public Circles yet</h3><p class="muted">${CC.me ? "Be the first — create one from your interests above." : "Join to create the first one."}</p></div>`}</div>
     <div id="createSlot"></div>`;
     document.getElementById("bf").onsubmit = (e) => { e.preventDefault(); location.hash = `#/circles?q=${encodeURIComponent(document.getElementById("bq").value.trim())}`; };
@@ -385,23 +438,48 @@
   }
   function createForm(s) {
     const slot = document.getElementById("createSlot");
-    slot.innerHTML = `<form class="card cc" id="cf" style="margin-top:20px"><div class="cc-head"><span class="cc-badge">${ICON.users}</span><div><h2>Create “${esc(s.label)}” Circle</h2><p>You'll be the host. Nothing is published until you confirm.</p></div><span class="cc-orb a"></span></div>
-      <div class="cc-body"><div class="grid2">
-        <div class="field"><label for="cName">Circle name *</label><input id="cName" type="text" minlength="3" maxlength="80" required value="${esc(s.label)} Circle"/></div>
-        <div class="field"><label for="cCat">Topic type</label><select id="cCat">${[["general", "General"], ["health", "Health & wellbeing (peer support)"], ["political", "Politics & civic"]].map(([v, l]) => `<option value="${v}" ${s.suggested_category === v ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
-        <div class="field"><label for="cPurpose">Purpose</label><textarea id="cPurpose" maxlength="400" rows="2" placeholder="What will members do together?"></textarea></div>
-        <div class="grid3">
-          <div class="field"><label for="cMode">Meeting mode</label><select id="cMode"><option value="either">Online or in person</option><option value="in_person">In person</option><option value="online">Online</option></select></div>
-          <div class="field"><label for="cArea">Broad area</label><input id="cArea" type="text" maxlength="60" value="${esc(CC.me.area || "")}"/></div>
-          <div class="field"><label for="cVis">Visibility</label><select id="cVis"><option value="public">Public — discoverable</option><option value="private">Private — invite code + approval</option></select></div>
-          <div class="field"><label for="cCap">Capacity</label><input id="cCap" type="number" min="3" max="50" value="12"/></div>
-          <div class="field"><label for="cMin">Minimum to meet</label><input id="cMin" type="number" min="2" max="10" value="3"/></div>
-          <div class="field"><label for="cLang">Language (optional)</label><input id="cLang" type="text" maxlength="30" value="${esc(CC.me.language || "")}"/></div></div>
-        <label>Members here want to…</label>${chipGroup("cint", INTENTS, s.intent === "teach" || s.intent === "learn" ? ["teach", "learn"] : [s.intent])}
-        <label>Accessibility you commit to</label>${chipGroup("cacc", ACCESS, ["flexible_participation"])}
-        <label class="switch"><input type="checkbox" id="cMemEv" checked/><span class="sw"></span><span class="si">📅</span> Any member may propose events (hosts confirm)</label>
-        <div class="row end"><button class="btn ghost" type="button" id="cCancel">Cancel</button><button class="btn primary" type="submit">Create Circle</button></div></div></form>`;
+    const I = (k) => (window.wsIcon ? window.wsIcon(k) : "");
+    const seg = (name, id, opts, cur) => `<select id="${id}" hidden>${opts.map(([v, l]) => `<option value="${v}" ${v === cur ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <div class="b-cards" role="radiogroup" aria-label="${esc(name)}">${opts.map(([v, l, ic, sub]) => `<button type="button" role="radio" class="b-card ${v === cur ? "on" : ""}" aria-checked="${v === cur}" data-for="${id}" data-v="${v}">
+        <span class="bc-ic">${I(ic)}</span><b>${l}</b>${sub ? `<small>${sub}</small>` : ""}</button>`).join("")}</div>`;
+    slot.innerHTML = `<form class="builder cbuild" id="cf" novalidate><div class="b-main">
+      <div class="b-title"><span class="kicker">${I("sparkle")} New Circle</span><h2>Start a “${esc(s.label)}” Circle</h2><p class="muted small">You'll host it. Nothing is public until you create it.</p></div>
+      <section class="b-step"><header><span class="b-num">1</span><h3>Basics</h3><span class="b-ic">${I("users")}</span></header>
+        <label class="pf-f"><span>${I("users")}Circle name *</span><input id="cName" type="text" minlength="3" maxlength="80" required value="${esc(s.label)} Circle"/></label>
+        <label class="pf-f"><span>${I("book")}Purpose</span><textarea id="cPurpose" maxlength="400" rows="2" placeholder="What will members do together?"></textarea></label>
+        <span class="pf-f"><span>${I("sparkle")}Topic type</span></span>
+        ${seg("Topic type", "cCat", [["general", "General", "sparkle", "Hobbies & culture"], ["health", "Peer support", "heart", "Health & wellbeing"], ["political", "Civic", "mic", "Politics & dialogue"]], s.suggested_category || "general")}</section>
+      <section class="b-step"><header><span class="b-num">2</span><h3>Where & who</h3><span class="b-ic">${I("pin")}</span></header>
+        ${seg("Meeting mode", "cMode", [["either", "Both", "compass", "Online or in person"], ["in_person", "In person", "pin", "Meet nearby"], ["online", "Online", "bot", "Video calls"]], "either")}
+        <div class="pf-fields"><label class="pf-f"><span>${I("pin")}Broad area</span><input id="cArea" type="text" maxlength="60" value="${esc(CC.me.area || "")}"/></label>
+          <label class="pf-f"><span>${I("mic")}Language</span><input id="cLang" type="text" maxlength="30" value="${esc(CC.me.language || "")}" placeholder="Optional"/></label></div>
+        ${seg("Visibility", "cVis", [["public", "Public", "compass", "Anyone can discover it"], ["private", "Private", "lock", "Invite link + approval"]], "public")}</section>
+      <section class="b-step"><header><span class="b-num">3</span><h3>Size & style</h3><span class="b-ic">${I("calendar")}</span></header>
+        <div class="b-range"><label for="cCap">${I("users")} Capacity <output id="cCapO">12</output></label><input id="cCap" type="range" min="3" max="50" value="12"/></div>
+        <div class="b-range"><label for="cMin">${I("check")} Minimum to meet <output id="cMinO">3</output></label><input id="cMin" type="range" min="2" max="10" value="3"/></div>
+        <span class="pf-l">${I("users")} Members here want to…</span>${chipGroup("cint", INTENTS, s.intent === "teach" || s.intent === "learn" ? ["teach", "learn"] : [s.intent])}
+        <span class="pf-l">${I("heart")} Accessibility you commit to</span>${chipGroup("cacc", ACCESS, ["flexible_participation"])}
+        <label class="pf-toggle"><input type="checkbox" id="cMemEv" checked/><span class="pt-ic">${I("calendar")}</span><span class="pt-t"><b>Members can propose activities</b><small>Hosts still confirm</small></span><span class="sw"></span></label></section>
+      <div class="b-actions"><button class="btn ghost" type="button" id="cCancel">Cancel</button><button class="btn primary" type="submit">${I("check")} Create Circle</button></div></div>
+      <aside class="b-preview"><span class="b-pv-l">${I("sparkle")} Live preview</span><div id="cPv"></div>
+        <ul class="b-perks"><li>${I("bot")}<span><b>Planning agent</b> drafts activities once ${"members join"}</span></li><li>${I("compass")}<span><b>Matched people</b> get it recommended</span></li><li>${I("lock")}<span><b>You moderate</b> members & posts</span></li></ul></aside></form>`;
     slot.querySelectorAll("[data-multi]").forEach((b) => (b.onclick = () => b.classList.toggle("on")));
+    slot.querySelectorAll(".b-card").forEach((b) => (b.onclick = () => {
+      document.getElementById(b.dataset.for).value = b.dataset.v;
+      slot.querySelectorAll(`.b-card[data-for="${b.dataset.for}"]`).forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); });
+      pv();
+    }));
+    const pv = () => {
+      const cap = +document.getElementById("cCap").value, min = +document.getElementById("cMin").value;
+      document.getElementById("cCapO").textContent = cap; document.getElementById("cMinO").textContent = min;
+      const mode = document.getElementById("cMode").value;
+      document.getElementById("cPv").innerHTML = window.wsCircleTile ? window.wsCircleTile({ id: "preview", name: document.getElementById("cName").value || `${s.label} Circle`,
+        topic_label: s.label, signals: s.signals || [], member_count: 1, area: mode === "online" ? "" : document.getElementById("cArea").value, meeting_mode: mode,
+        reasons: [{ source: "app", text: document.getElementById("cPurpose").value || `People who share an interest in ${s.label}.` }] },
+        { action: `<span class="pill">${document.getElementById("cVis").value === "private" ? `${I("lock")} Private` : `${I("compass")} Public`} · up to ${cap}</span>` }) : "";
+    };
+    slot.addEventListener("input", pv);
+    pv();
     slot.scrollIntoView({ behavior: "smooth", block: "start" });
     document.getElementById("cCancel").onclick = () => (slot.innerHTML = "");
     document.getElementById("cf").onsubmit = (e) => {
@@ -412,12 +490,13 @@
           visibility: document.getElementById("cVis").value, capacity: +document.getElementById("cCap").value, min_size: +document.getElementById("cMin").value,
           language: document.getElementById("cLang").value.trim(), intents: readMulti(slot, "cint"), accessibility: readMulti(slot, "cacc"),
           member_events: document.getElementById("cMemEv").checked };
+        if (body.min_size > body.capacity) return toast("Minimum can't be larger than capacity", true);
         try {
           const c = await capi("/api/circles", { body });
           CC.rec = null; toast("Circle created 🎉"); location.hash = `#/c/${c.id}`;
         } catch (err) {
           if (err.status === 409 && err.data && err.data.detail && err.data.detail.circle_id) {
-            slot.insertAdjacentHTML("afterbegin", `<div class="notice">${esc(err.data.detail.message)} <a class="btn soft sm" href="#/c/${esc(err.data.detail.circle_id)}">Open “${esc(err.data.detail.name)}”</a></div>`);
+            slot.querySelector(".b-main").insertAdjacentHTML("afterbegin", `<div class="notice">${esc(err.data.detail.message)} <a class="btn soft sm" href="#/c/${esc(err.data.detail.circle_id)}">Open “${esc(err.data.detail.name)}”</a></div>`);
             return;
           }
           throw err;
@@ -429,12 +508,13 @@
   // ------------------------------------------------------------------ my circles + events
   async function viewMy() {
     const [mine, evs] = await Promise.all([capi("/api/me/circles"), capi("/api/me/events")]);
-    app.innerHTML = `<section class="how-hero" style="padding-bottom:10px"><span class="how-kicker">⭕ My Circles</span><h1>Your <span>communities</span></h1></section>
-      <div class="grid2"><div><h2 class="sec-h">Circles</h2>${mine.length ? mine.map((c) => circleCard(c, `<div class="row between"><span class="badge ${c.my_status === "pending" ? "participant" : "qloo"}">${c.my_status === "pending" ? "awaiting approval" : c.my_role}</span><a class="btn soft sm" href="#/c/${esc(c.id)}">Open</a></div>`)).join("")
-        : `<div class="card empty-state"><div class="es-ic">🧭</div><h3>No Circles yet</h3><a class="btn primary" href="#/circles">Discover Circles</a></div>`}</div>
-      <div><h2 class="sec-h">📅 My Events</h2>${evs.length ? evs.map((e) => `<a class="card ev-row" href="#/c/${esc(e.circle_id)}/events">
+    app.innerHTML = `<div class="page-head"><h1>My Circles</h1><a class="btn soft sm" href="#/circles">Find more</a></div>
+      <div class="my-grid"><div>${mine.length ? `<div class="cc-tiles">${mine.map((c) => window.wsCircleTile ? window.wsCircleTile(c, { noReason: true,
+          action: c.my_status === "pending" ? `<span class="pill">Awaiting approval</span>` : `<a class="btn primary sm" href="#/c/${esc(c.id)}">Open</a>` }) : "").join("")}</div>`
+        : `<div class="empty-line"><span>No Circles yet.</span><a class="btn primary sm" href="#/dashboard">Discover Circles</a></div>`}</div>
+      <div class="my-side"><h2 class="sec-h small-h">📅 My activities</h2>${evs.length ? evs.map((e) => `<a class="card ev-row" href="#/c/${esc(e.circle_id)}/events">
           <span class="badge ${e.status === "confirmed" ? "qloo" : "participant"}">${e.status}</span><div><b>${esc(e.title)}</b><div class="muted small">${esc(e.circle_name)}${e.chosen_time ? " · " + esc(fmtIso(e.chosen_time)) : ""}${e.my_rsvp ? " · you: " + esc(e.my_rsvp.replace("_", " ")) : ""}</div></div></a>`).join("")
-        : `<div class="card empty-state"><div class="es-ic">📅</div><h3>No events yet</h3><p class="muted">Open a Circle and plan an activity with the agent.</p></div>`}</div></div>`;
+        : `<div class="empty-line"><span>Nothing planned yet.</span><a class="btn soft sm" href="#/activities">Find an activity</a></div>`}</div></div>`;
   }
 
   // ------------------------------------------------------------------ circle page
@@ -442,14 +522,16 @@
     const invite = queryParam("invite");
     const c = await capi(`/api/circles/${encodeURIComponent(cid)}${invite ? `?invite=${encodeURIComponent(invite)}` : ""}`);
     const m = c.my_membership, member = m && m.status === "active", mod = member && ["host", "moderator"].includes(m.role);
-    const tabs = [["discussion", "💬 Discussion"], ["events", "📅 Events"], ["members", "👥 Members"], ["about", "ℹ️ About"]];
+    const tabs = [["chat", "💬 Chat"], ["discussion", "🧵 Threads"], ["events", "📅 Activities"], ["members", "👥 Members"], ["about", "ℹ️ About"]];
     app.innerHTML = `
     <section class="circle-hero cat-${c.category}">
       <div><span class="how-kicker">${c.category === "health" ? "🩺 Peer support" : c.category === "political" ? "🗳 Civic dialogue" : "⭕ Circle"}${c.visibility === "private" ? " · 🔒 Private" : ""}</span>
+        ${c.org ? `<a class="org-pill" href="#/o/${esc(c.org.slug)}">🏢 ${esc(c.org.name)} · ${c.org.verification_status === "verified" ? "✓ Verified" : c.org.verification_status === "pending" ? "Verification pending" : "Not verified"}</a>` : ""}
         <h1>${esc(c.name)}</h1><p>${esc(c.purpose || `People who share an interest in ${c.topic_label}.`)}</p>
         <div class="sigs">${c.signals.map((s) => `<span class="kind ${esc(s.kind)}" title="Qloo ${esc(s.type)}">${esc(s.kind)} · ${esc(s.name)}</span>`).join("") || `<span class="kind tag">declared · ${esc(c.topic_label)}</span>`}</div></div>
       <div class="ch-side"><div class="ch-count"><b>${c.member_count}</b><span>of ${c.capacity} members</span></div>
-        ${!CC.me ? `<a class="btn primary" href="#/join">Join to take part</a>`
+        ${!CC.auth ? `<a class="btn primary" href="#/auth/signup?next=join">Sign up to take part</a>`
+          : !CC.me && !member ? `<a class="btn primary" href="#/join">Create your profile to join</a>`
           : member ? `<button class="btn ghost sm" id="leaveBtn">Leave Circle</button>`
           : m && m.status === "pending" ? `<span class="badge participant">Request pending</span>`
           : `<button class="btn primary" id="joinBtn">${c.visibility === "private" ? "Request to join" : "Join Circle"}</button>`}</div></section>
@@ -466,6 +548,7 @@
     if (lb) lb.onclick = (e) => { if (!confirm(`Leave ${c.name}?`)) return; withBusy(e.currentTarget, async () => { await capi(`/api/circles/${c.id}/leave`, { method: "POST" }); CC.rec = null; toast("You left the Circle"); location.hash = "#/my"; }); };
     if (!member) return;
     const body = document.getElementById("tabBody");
+    if (tab === "chat" && window.ppChat) return window.ppChat(c, body, mod, "");
     if (tab === "events") return tabEvents(c, body, mod);
     if (tab === "members") return tabMembers(c, body);
     if (tab === "about") { body.innerHTML = `<div class="grid2">${aboutHtml(c)}${m.role === "host" ? hostSettings(c) : ""}</div><div id="reportsSlot"></div>`; bindHost(c); if (mod) loadReports(c); return; }
@@ -626,6 +709,8 @@
       : `<div class="notice">Only hosts and moderators can propose events in this Circle.</div>`}
       <div id="evList">${evs.length ? "" : `<div class="card empty-state"><div class="es-ic">📅</div><h3>No events yet</h3><p class="muted">Propose the first one — the agent does the heavy lifting.</p></div>`}</div>`;
     const list = document.getElementById("evList");
+    list.insertAdjacentHTML("beforebegin", `<div id="planBoard"></div>`);
+    if (window.wsPlanBoard) window.wsPlanBoard(document.getElementById("planBoard"), c, mod, evs).catch(() => {});
     list.insertAdjacentHTML("beforeend", evs.map((e) => `<div class="card event st-${e.status}" data-eid="${esc(e.id)}">
       <div class="row between"><div><span class="badge ${e.status === "confirmed" ? "qloo" : e.status === "cancelled" ? "generated" : "participant"}">${e.status === "proposed" ? "proposed — voting" : e.status}</span>
         <h3 style="margin:6px 0 0">${esc(e.title)}</h3><div class="muted small">Proposed by ${esc(e.proposer)} · ${fmtTime(e.created_at)}${e.chosen_time ? ` · <b>📅 ${esc(fmtIso(e.chosen_time))}</b>` : ""}${e.location_note ? " · 📍 " + esc(e.location_note) : ""}</div></div>
@@ -636,9 +721,12 @@
       ${e.status === "proposed" && e.can_manage ? `<form class="confirm-row" data-confirm><b>Host:</b>
           <select aria-label="Final option">${e.plan.concepts.map((k, i) => `<option value="${i}">Option ${String.fromCharCode(65 + i)}</option>`).join("")}</select>
           <select aria-label="Final time">${e.time_options.length ? e.time_options.map((t, i) => `<option value="${i}">${esc(fmtIso(t))}</option>`).join("") : `<option value="">Add time options first</option>`}</select>
-          <input type="text" maxlength="200" placeholder="Confirmed location (optional)" aria-label="Location"/>
-          <button class="btn primary sm" ${e.time_options.length ? "" : "disabled"}>Confirm final plan</button></form>` : ""}
-      ${e.status === "confirmed" ? `<div class="rsvp"><b>RSVP</b> <span class="muted small">${e.rsvp_counts.going || 0}/${e.capacity} going · ${e.rsvp_counts.maybe || 0} maybe</span>
+          <select data-place aria-label="Meeting place"><option value="">📍 Location to be confirmed</option></select>
+          <button class="btn primary sm" ${e.time_options.length ? "" : "disabled"}>Confirm & publish event</button></form>` : ""}
+      ${e.status === "proposed" ? `<div class="places-box" data-places="${esc(e.id)}"></div>` : ""}
+      ${e.status !== "cancelled" ? `<details class="disc" data-disc="${esc(e.id)}"><summary>💬 Discuss this ${e.status === "proposed" ? "proposal" : "activity"}</summary><div class="disc-body"></div></details>` : ""}
+      ${e.status === "confirmed" && e.event_id ? `<div class="rsvp"><a class="btn primary" href="#/e/${esc(e.event_id)}">🎟 Open the event page — RSVP, meeting point & updates →</a></div>` : ""}
+      ${e.status === "confirmed" && !e.event_id ? `<div class="rsvp"><b>RSVP</b> <span class="muted small">${e.rsvp_counts.going || 0}/${e.capacity} going · ${e.rsvp_counts.maybe || 0} maybe</span>
           ${["going", "maybe", "not_going"].map((s) => `<button class="btn ${e.my_rsvp === s ? "primary" : "soft"} sm" data-rsvp="${s}">${s === "going" ? "✅ Going" : s === "maybe" ? "🤔 Maybe" : "❌ Can't go"}</button>`).join("")}
           <p class="muted tiny">Confirmed by a host. Venue/price details are as entered by the host — Culture Connect doesn't book or verify them.</p></div>` : ""}
     </div>`).join(""));
@@ -663,13 +751,22 @@
       if (r) withBusy(r, async () => { await capi(`/api/circle-events/${eid}/rsvp`, { body: { status: r.dataset.rsvp } }); tabEvents(c, body, mod); });
       if (x && confirm("Cancel this event for everyone?")) withBusy(x, async () => { await capi(`/api/circle-events/${eid}/cancel`, { method: "POST" }); tabEvents(c, body, mod); });
     });
+    list.querySelectorAll("[data-places]").forEach((el) => { if (window.ppPlaces) window.ppPlaces(el, el.dataset.places, (places) => {
+      const sel = list.querySelector(`[data-eid="${el.dataset.places}"] [data-place]`);
+      if (sel) sel.innerHTML = `<option value="">📍 Location to be confirmed</option>` + places.map((p) => `<option value="${p.id}">${esc(p.name)} · ${p.votes} vote${p.votes === 1 ? "" : "s"}</option>`).join("");
+    }); });
+    list.querySelectorAll("[data-disc]").forEach((d) => d.addEventListener("toggle", () => {
+      if (d.open && !d.dataset.loaded && window.ppChat) { d.dataset.loaded = "1"; window.ppChat(c, d.querySelector(".disc-body"), mod, `proposal:${d.dataset.disc}`, true); }
+    }));
     list.querySelectorAll("[data-confirm]").forEach((f) => (f.onsubmit = (ev) => {
       ev.preventDefault();
-      const eid = f.closest("[data-eid]").dataset.eid, [o, t] = f.querySelectorAll("select");
+      const eid = f.closest("[data-eid]").dataset.eid, [o, t, pl] = f.querySelectorAll("select");
       withBusy(f.querySelector("button"), async () => {
         try {
-          await capi(`/api/circle-events/${eid}/confirm`, { body: { option: +o.value, time_index: t.value === "" ? null : +t.value, location_note: f.querySelector("input").value.trim() || null } });
-          toast("Event confirmed 🎉 — members can RSVP now"); tabEvents(c, body, mod);
+          const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || "UTC";
+          const r = await capi(`/api/circle-events/${eid}/confirm`, { body: { option: +o.value, time_index: t.value === "" ? null : +t.value,
+            place_id: pl.value === "" ? null : +pl.value, timezone: tz } });
+          toast("Event published to the Circle 🎉"); location.hash = `#/e/${r.event_id}`;
         } catch (err) {
           if (err.data && err.data.detail && err.data.detail.failed) { toast("Can't confirm: " + err.data.detail.failed.map((k) => `${k.check} (${k.note})`).join("; "), true); return; }
           throw err;
@@ -678,6 +775,7 @@
     }));
   }
 
+  window.CCAPI = { capi, CC, loadMe, setToken, navState, fmtTime, fmtIso, circleCard, reasonList, chipGroup, readMulti, fail, store, ACCESS, AVAIL, PREFS };
   window.ccAfterHome = async () => { await loadMe(); navState(); renderDraftTray(); decorateHome(); };
   // initial nav state once app.js has booted
   window.addEventListener("hashchange", () => { navState(); renderDraftTray(); });

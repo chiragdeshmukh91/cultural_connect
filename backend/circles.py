@@ -154,19 +154,20 @@ def save_profile(uid: str | None, data: dict) -> dict:
         consent_at = (existing["consent_at"] if existing and existing["discoverable"] and data["discoverable"]
                       else (ts if data["discoverable"] else None))
         c.execute("""INSERT INTO profiles (user_id, alias, area, show_area, share_interests, bio, language, budget_max,
-                       availability, activity_prefs, accessibility, exclude_topics, adult_confirmed, discoverable, consent_at, updated_at)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                       availability, activity_prefs, accessibility, exclude_topics, adult_confirmed, discoverable, consent_at, updated_at, timezone)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                      ON CONFLICT(user_id) DO UPDATE SET alias=excluded.alias, area=excluded.area, show_area=excluded.show_area,
                        share_interests=excluded.share_interests, bio=excluded.bio, language=excluded.language,
                        budget_max=excluded.budget_max, availability=excluded.availability, activity_prefs=excluded.activity_prefs,
                        accessibility=excluded.accessibility, exclude_topics=excluded.exclude_topics,
                        adult_confirmed=excluded.adult_confirmed, discoverable=excluded.discoverable,
-                       consent_at=excluded.consent_at, updated_at=excluded.updated_at""",
+                       consent_at=excluded.consent_at, updated_at=excluded.updated_at,
+                       timezone=CASE WHEN excluded.timezone <> '' THEN excluded.timezone ELSE profiles.timezone END""",
                   (uid, data["alias"], data.get("area", ""), int(data.get("show_area", False)),
                    int(data.get("share_interests", False)), data.get("bio", ""), data.get("language", ""),
                    data.get("budget_max"), jl(data.get("availability")), jl(data.get("activity_prefs")),
                    jl(data.get("accessibility")), jl(data.get("exclude_topics")), 1, int(data["discoverable"]),
-                   consent_at, ts))
+                   consent_at, ts, (data.get("timezone") or "")[:60]))
         c.execute("DELETE FROM profile_interests WHERE user_id = ?", (uid,))
         for it in interests:
             cur = c.execute("INSERT INTO profile_interests (user_id, label, intent) VALUES (?,?,?)",
@@ -217,6 +218,20 @@ def delete_account(uid: str) -> dict:
         for cid in hosted:
             _transfer_host(c, cid, uid)
         c.execute("UPDATE posts SET body = '', deleted = 1, user_id = NULL WHERE user_id = ?", (uid,))
+        c.execute("UPDATE circle_messages SET body = '[deleted]', deleted = 1, user_id = NULL WHERE user_id = ?", (uid,))
+        from .platform_svc import notify
+        for o in c.execute("SELECT org_id FROM org_members WHERE user_id = ? AND role = 'owner'", (uid,)).fetchall():
+            others = c.execute("SELECT user_id, role FROM org_members WHERE org_id = ? AND user_id <> ? ORDER BY role = 'owner' DESC, created_at",
+                               (o["org_id"], uid)).fetchall()
+            if any(x["role"] == "owner" for x in others):
+                continue
+            if others:  # promote the longest-standing staff member
+                c.execute("UPDATE org_members SET role = 'owner' WHERE org_id = ? AND user_id = ?", (o["org_id"], others[0]["user_id"]))
+            else:  # nobody left to run it: cancel its upcoming published events and tell attendees
+                for e in c.execute("SELECT id, title FROM events WHERE org_id = ? AND status = 'published'", (o["org_id"],)).fetchall():
+                    c.execute("UPDATE events SET status = 'cancelled', cancel_reason = 'Organiser account closed' WHERE id = ?", (e["id"],))
+                    users = [r[0] for r in c.execute("SELECT user_id FROM event_rsvps WHERE event_id = ? AND user_id <> ?", (e["id"], uid))]
+                    notify(c, users, "event_cancelled", f"Cancelled: {e['title']}", "Organiser account closed", f"#/e/{e['id']}")
         c.execute("DELETE FROM users WHERE id = ?", (uid,))
     return {"deleted": True, "circles_transferred_or_archived": len(hosted)}
 
@@ -268,7 +283,15 @@ def _summary(c, row) -> dict:
             "accessibility": pl(row["accessibility"]), "capacity": row["capacity"], "min_size": row["min_size"],
             "member_count": count, "status": row["status"], "member_events": bool(row["member_events"]),
             "signals": [{"id": s["qloo_id"], "kind": s["kind"], "name": s["name"], "type": s["type"]} for s in sig],
-            "notice": NOTICES.get(row["category"])}
+            "notice": NOTICES.get(row["category"]), "image_url": row["image_url"], "join_policy": row["join_policy"],
+            "org": _org_brief(c, row["org_id"])}
+
+
+def _org_brief(c, oid):
+    if not oid:
+        return None
+    o = c.execute("SELECT id, slug, name, verification_status FROM organisations WHERE id = ?", (oid,)).fetchone()
+    return dict(o) if o else None
 
 
 def _membership(c, cid, uid):
@@ -364,12 +387,14 @@ def _hard_fail(circle: dict, prof: dict, labels_norm: set, c, uid) -> str | None
     return None
 
 
-def recommend(uid: str) -> dict:
+def recommend(uid: str, taste_override: tuple | None = None, extra_signals: list[dict] | None = None) -> dict:
+    """taste_override=(taste, warning) lets the discovery agent pass Qloo insights it already fetched (or cached ones
+    during an outage) so this function makes no Qloo call. extra_signals: Qloo-discovered interests the person saved."""
     prof = get_profile(uid)
     if not prof["discoverable"]:
         raise HTTPException(403, "Turn on discovery (consent) to get Circle recommendations.")
     interests = prof["interests"]
-    taste, warn = _taste(uid, interests)
+    taste, warn = taste_override if taste_override is not None else _taste(uid, interests)
     my_ids = {s["id"]: (it, s) for it in interests for s in it["signals"]}
     my_labels = {norm(it["label"]): it for it in interests}
     taste_ids = {}
@@ -384,9 +409,12 @@ def recommend(uid: str) -> dict:
         rows = c.execute("SELECT * FROM circles WHERE status = 'active' AND visibility = 'public'").fetchall()
         for r in rows:
             m = _membership(c, r["id"], uid)
-            if m and m["status"] in ("active", "pending", "removed"):
-                continue
+            if m and m["status"] in ("active", "pending", "removed", "rejected"):
+                continue  # already a member / request pending / removed or declined: never re-recommend
+            if r["join_policy"] == "invite_only":
+                continue  # not joinable without an invite link
             circ = _summary(c, r)
+            circ["join_mode"] = "request" if r["org_id"] else "direct"
             reasons, pts, labels_hit = [], 0.0, set()
             for s in circ["signals"]:
                 if s["id"] in my_ids:
@@ -409,6 +437,12 @@ def recommend(uid: str) -> dict:
                     kind, name = taste_ids[s["id"]]
                     reasons.append({"source": "qloo", "text": f"Qloo Insights for your interests returned the {kind} “{name}”, which is this Circle's topic."})
                     qloo_pts += 1.5
+            for s in circ["signals"]:
+                hit = next((x for x in (extra_signals or []) if x["id"] == s["id"]), None)
+                if hit and s["id"] not in my_ids:
+                    reasons.append({"source": "qloo", "text": f"You saved “{hit['name']}” from your Qloo discoveries — it's this Circle's topic."})
+                    qloo_pts += 2
+                    break
             pts += qloo_pts
             if pts <= 0:
                 continue  # no declared or Qloo-supported link: never recommend on preferences alone
@@ -429,7 +463,7 @@ def recommend(uid: str) -> dict:
     recs.sort(key=lambda x: (-x["_pts"], x["name"]))
     for r in recs:
         r["rank_basis"] = "Ordered by count of declared matches (×3), Qloo-supported links (×1.5, max 3), intent and area fit. Not a compatibility score."
-        r.pop("_pts", None)
+        r["score"] = round(r.pop("_pts"), 2)  # application rank points (never a Qloo score)
     create = [{"interest_id": it["id"], "label": it["label"], "intent": it["intent"], "signals": it["signals"],
                "suggested_category": suggest_category(it["label"], it["signals"])}
               for it in interests if norm(it["label"]) not in matched_interest_labels]
@@ -515,9 +549,15 @@ def join(uid: str, cid: str, invite: str | None = None) -> dict:
                    "meeting mode": "This Circle's meeting mode doesn't match your preferences.",
                    "excluded topic": "This topic is in your 'never recommend' list."}.get(fail, "Not eligible.")
             raise HTTPException(403, msg)
-        status = "pending" if row["visibility"] == "private" else "active"
+        if row["join_policy"] == "invite_only" and not (invite and row["invite_code"] and secrets.compare_digest(invite, row["invite_code"])):
+            raise HTTPException(403, "This Circle is invite-only. Ask a host for the invite link.")
+        status = "pending" if (row["visibility"] == "private" or row["org_id"]) else "active"
         c.execute("INSERT INTO memberships VALUES (?,?,?,?,?) ON CONFLICT(circle_id, user_id) DO UPDATE SET "
                   "status = excluded.status, role = 'member', joined_at = excluded.joined_at", (cid, uid, "member", status, now()))
+        if status == "pending":
+            from .platform_svc import notify
+            mods = [r[0] for r in c.execute("SELECT user_id FROM memberships WHERE circle_id = ? AND status = 'active' AND role IN ('host','moderator')", (cid,))]
+            notify(c, mods, "join_request", f"New join request for {row['name']}", f"{prof['alias']} asked to join.", f"#/c/{cid}/members")
     return {"status": status, "already": False}
 
 
@@ -559,9 +599,13 @@ def moderate_member(uid: str, cid: str, target: str, action: str) -> dict:
             if n >= row["capacity"]:
                 raise HTTPException(409, "Circle is full.")
             c.execute("UPDATE memberships SET status = 'active' WHERE circle_id = ? AND user_id = ?", (cid, target))
+            from .platform_svc import notify
+            notify(c, [target], "join_approved", f"You're in: {row['name']}", "Your request to join was approved.", f"#/c/{cid}")
         elif action in ("remove", "decline"):
+            if action == "decline" and t["status"] != "pending":
+                raise HTTPException(400, "Not a pending request.")
             c.execute("UPDATE memberships SET status = ?, role = 'member' WHERE circle_id = ? AND user_id = ?",
-                      ("removed" if action == "remove" else "left", cid, target))
+                      ("removed" if action == "remove" else "rejected", cid, target))
         elif action == "make_moderator":
             c.execute("UPDATE memberships SET role = 'moderator' WHERE circle_id = ? AND user_id = ? AND status = 'active'", (cid, target))
         elif action == "make_member":
@@ -577,13 +621,13 @@ def members(uid: str, cid: str) -> dict:
         if not _active(m):
             raise HTTPException(403, "Join this Circle to see its members.")
         rows = c.execute("""SELECT m.user_id, m.role, m.status, m.joined_at, p.alias, p.area, p.show_area, p.share_interests, p.bio
-                            FROM memberships m JOIN profiles p ON p.user_id = m.user_id
+                            FROM memberships m LEFT JOIN profiles p ON p.user_id = m.user_id
                             WHERE m.circle_id = ? AND m.status IN ('active','pending') ORDER BY m.joined_at""", (cid,)).fetchall()
         out = []
         for r in rows:
             if r["status"] == "pending" and not _is_mod(m):
                 continue
-            d = {"user_id": r["user_id"], "alias": r["alias"], "role": r["role"], "status": r["status"],
+            d = {"user_id": r["user_id"], "alias": r["alias"] or "Organisation staff", "role": r["role"], "status": r["status"],
                  "joined_at": r["joined_at"], "me": r["user_id"] == uid, "bio": r["bio"] if r["share_interests"] else ""}
             if r["show_area"]:
                 d["area"] = r["area"]
@@ -913,7 +957,9 @@ def _event_view(c, e, uid, m) -> dict:
     my_rsvp = c.execute("SELECT status FROM rsvps WHERE event_id = ? AND user_id = ?", (e["id"], uid)).fetchone()
     prop = c.execute("SELECT alias FROM profiles WHERE user_id = ?", (e["proposer_id"],)).fetchone() if e["proposer_id"] else None
     return {"id": e["id"], "circle_id": e["circle_id"], "title": e["title"], "status": e["status"],
-            "proposer": prop["alias"] if prop else "[deleted account]", "mine": e["proposer_id"] == uid,
+            "proposer": prop["alias"] if prop else ("🤖 Planning agent" if e["source"] == "agent" else "[deleted account]"),
+            "mine": e["proposer_id"] == uid, "source": e["source"], "vote_deadline": e["vote_deadline"],
+            "selection": json.loads(e["selection"]) if e["selection"] else None,
             "constraints": json.loads(e["constraints"]), "plan": json.loads(e["plan"]),
             "time_options": json.loads(e["time_options"]), "chosen_option": e["chosen_option"], "chosen_time": e["chosen_time"],
             "capacity": e["capacity"], "location_note": e["location_note"], "created_at": e["created_at"],
@@ -921,7 +967,7 @@ def _event_view(c, e, uid, m) -> dict:
             "votes": {"activity": {r["choice"]: r["n"] for r in votes if r["kind"] == "activity"},
                       "time": {r["choice"]: r["n"] for r in votes if r["kind"] == "time"}},
             "my_votes": mine, "rsvp_counts": rs, "my_rsvp": my_rsvp["status"] if my_rsvp else None,
-            "can_manage": _is_mod(m), "can_cancel": _is_mod(m) or e["proposer_id"] == uid}
+            "can_manage": _is_mod(m), "can_cancel": _is_mod(m) or e["proposer_id"] == uid, "event_id": e["event_id"]}
 
 
 def get_event(uid: str, eid: str) -> dict:
@@ -952,7 +998,8 @@ def vote(uid: str, eid: str, kind: str, choice: int) -> dict:
     return get_event(uid, eid)
 
 
-def confirm_event(uid: str, eid: str, option: int, time_index: int | None, location_note: str | None) -> dict:
+def confirm_event(uid: str, eid: str, option: int, time_index: int | None, location_note: str | None,
+                  place_id: int | None = None, timezone: str = "UTC") -> dict:
     with db.tx() as c:
         e, row, m = _event(c, eid, uid)
         if not _is_mod(m):
@@ -974,9 +1021,16 @@ def confirm_event(uid: str, eid: str, option: int, time_index: int | None, locat
         if fails:
             raise HTTPException(409, {"message": "Hard constraints failed — edit or re-propose the event.", "failed": fails})
         concepts[option]["checks"] = checks
+        place = None
+        if place_id is not None:
+            place = c.execute("SELECT * FROM place_candidates WHERE id = ? AND proposal_id = ?", (place_id, eid)).fetchone()
+            if not place:
+                raise HTTPException(400, "Choose one of the suggested meeting places (or confirm with location to be confirmed).")
+        from .platform_svc import event_from_proposal
+        real_id = event_from_proposal(c, uid, e, concepts[option], times[time_index], timezone, place, e["capacity"], row)
         c.execute("""UPDATE circle_events SET status = 'confirmed', chosen_option = ?, chosen_time = ?, plan = ?,
-                     location_note = COALESCE(?, location_note), confirmed_by = ?, confirmed_at = ? WHERE id = ?""",
-                  (option, times[time_index], json.dumps(plan, default=str), (location_note or None), uid, now(), eid))
+                     location_note = COALESCE(?, location_note), confirmed_by = ?, confirmed_at = ?, event_id = ? WHERE id = ?""",
+                  (option, times[time_index], json.dumps(plan, default=str), (location_note or None), uid, now(), real_id, eid))
     return get_event(uid, eid)
 
 

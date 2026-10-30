@@ -1,0 +1,28 @@
+# One-click deploy on Render (Blueprint). Secrets are entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: culture-connect
+    runtime: python
+    plan: starter            # needs a persistent disk; the free plan has an ephemeral filesystem and sleeps (pauses the agent worker)
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: QLOO_API_KEY
+        sync: false          # paste the (rotated) hackathon key in the dashboard
+      - key: QLOO_BASE_URL
+        value: https://hackathon.api.qloo.com
+      - key: DB_PATH
+        value: /var/data/culture_connect.db
+      - key: APP_BASE_URL
+        sync: false          # e.g. https://culture-connect.onrender.com
+      - key: CORS_ORIGINS
+        sync: false
+      - key: LLM_PROVIDER
+        value: none
+      - key: AGENT_WORKER
+        value: "1"
