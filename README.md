@@ -3,7 +3,7 @@
 **Different people. Shared passions. Real human connections.**
 Qloo-powered Circles that turn shared taste into real meetups — built for the Qloo Agentic Hackathon 2026.
 
-- **Live app:** `https://<YOUR-DEPLOYED-URL>` *(placeholder until deployed)*
+- **Live app:** https://packing-jacket-logging-safari.trycloudflare.com/
 - **Full feature & workflow description:** [docs/FEATURE_WALKTHROUGH.md](docs/FEATURE_WALKTHROUGH.md)
 - **Judge guide:** [docs/JUDGE_TESTING_GUIDE.md](docs/JUDGE_TESTING_GUIDE.md)
 - **Submission docs:** [docs/](docs/)
