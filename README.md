@@ -7,6 +7,7 @@ Qloo-powered Circles that turn shared taste into real meetups — built for the 
 - **Full feature & workflow description:** [docs/FEATURE_WALKTHROUGH.md](docs/FEATURE_WALKTHROUGH.md)
 - **Judge guide:** [docs/JUDGE_TESTING_GUIDE.md](docs/JUDGE_TESTING_GUIDE.md)
 - **Submission docs:** [docs/](docs/)
+- **Demo Link:** https://packing-jacket-logging-safari.trycloudflare.com/
 
 ## 1. Overview
 Culture Connect is a culturally intelligent community discovery and coordination platform. Members describe what they enjoy; Qloo turns that into taste signals; the app recommends small local **Circles** and real activities with the reason for each; and supervised agents help hosts and organisations form groups, plan activities, collect votes and RSVPs, and follow up.
