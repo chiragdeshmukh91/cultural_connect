@@ -157,13 +157,11 @@ python scripts/seed_demo.py --base https://<YOUR-DEPLOYED-URL> --password "<stro
 ```
 Credentials go in the Devpost testing-instructions field, not in this repository. Scenarios: [docs/JUDGE_TESTING_GUIDE.md](docs/JUDGE_TESTING_GUIDE.md).
 
-## 23. Known limitations
-No chat assistant UI, no external event or booking provider, chat polls every 5 s, SQLite + single worker, results depend on live Qloo data. Full list: [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
 
-## 24. Future improvements
+## 23. Future improvements
 Verified external event sources, real-time chat, multilingual interest matching, organisation analytics on which cultural themes bring people back, and a shared store for rate limits to run several instances.
 
-## 25. Team
+## 24. Team
 | Member | Role |
 |---|---|
 | Chirag Deshmukh | Technical Lead — architecture, backend, Qloo integration, agents |
@@ -171,7 +169,7 @@ Verified external event sources, real-time chat, multilingual interest matching,
 
 Details: [docs/TEAM_CONTRIBUTIONS.md](docs/TEAM_CONTRIBUTIONS.md).
 
-## 26. Licence
+## 25. Licence
 MIT — see [LICENSE](LICENSE).
 
 ## Privacy and safety
